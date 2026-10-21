@@ -1,0 +1,300 @@
+import { getSupabase } from "./supabase-client.js";
+
+function mapProduct(row, images = []) {
+  const image = (images || []).sort((a, b) => a.sort_order - b.sort_order)[0];
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    categoryId: row.category_id,
+    categoryName: row.categories?.name || "Sin categoría",
+    temuUrl: row.temu_url,
+    listPriceRemote: Number(row.list_price_remote || 0),
+    unitSalePrice: Number(row.unit_sale_price || 0),
+    stockQty: row.stock_qty,
+    avgUnitCost: Number(row.avg_unit_cost || 0),
+    isPublished: row.is_published,
+    imageUrl: image?.public_url || "",
+    available: row.stock_qty > 0,
+  };
+}
+
+export function createSupabaseStore() {
+  const sb = getSupabase();
+  if (!sb) throw new Error("Faltan VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY");
+
+  return {
+    mode: "supabase",
+
+    async getSession() {
+      const { data } = await sb.auth.getSession();
+      const user = data.session?.user;
+      if (!user) return null;
+      const { data: admin, error } = await sb
+        .from("admin_users")
+        .select("display_name, email")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (error) throw error;
+      if (!admin) return { userId: user.id, email: user.email, displayName: user.email, unauthorized: true };
+      return { userId: user.id, email: admin.email, displayName: admin.display_name };
+    },
+
+    async signIn(email, password) {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      return this.getSession();
+    },
+
+    async signOut() {
+      await sb.auth.signOut();
+    },
+
+    async listCategories() {
+      const { data, error } = await sb.from("categories").select("*").order("sort_order");
+      if (error) throw error;
+      return data.map((c) => ({ id: c.id, name: c.name, slug: c.slug, sortOrder: c.sort_order }));
+    },
+
+    async listPublishedProducts() {
+      const { data, error } = await sb
+        .from("products")
+        .select("*, categories(name), product_images(public_url, sort_order)")
+        .eq("is_published", true)
+        .order("name");
+      if (error) throw error;
+      return data.map((row) => mapProduct(row, row.product_images));
+    },
+
+    async getWhatsappPhone() {
+      const envPhone = import.meta.env.VITE_WHATSAPP_PHONE || "";
+      const { data, error } = await sb.from("app_settings").select("value").eq("key", "whatsapp_phone").maybeSingle();
+      if (error) return envPhone;
+      const fromDb = data?.value?.phone || "";
+      return String(fromDb || envPhone).replace(/\D/g, "");
+    },
+
+    async listAllProducts() {
+      const { data, error } = await sb
+        .from("products")
+        .select("*, categories(name), product_images(public_url, sort_order)")
+        .order("name");
+      if (error) throw error;
+      return data.map((row) => mapProduct(row, row.product_images));
+    },
+
+    async saveProduct(input) {
+      const payload = {
+        name: input.name.trim(),
+        description: input.description || "",
+        category_id: input.categoryId || null,
+        temu_url: input.temuUrl || "",
+        list_price_remote: input.listPriceRemote || 0,
+        unit_sale_price: input.unitSalePrice || 0,
+        is_published: Boolean(input.isPublished),
+      };
+      let row;
+      if (input.id) {
+        const { data, error } = await sb.from("products").update(payload).eq("id", input.id).select().single();
+        if (error) throw error;
+        row = data;
+      } else {
+        const { data, error } = await sb.from("products").insert(payload).select().single();
+        if (error) throw error;
+        row = data;
+      }
+      if (input.imageFile) {
+        const path = `${row.id}/${Date.now()}-${input.imageFile.name}`;
+        const { error: upErr } = await sb.storage.from("product-images").upload(path, input.imageFile);
+        if (upErr) throw upErr;
+        const { data: pub } = sb.storage.from("product-images").getPublicUrl(path);
+        const { error: imgErr } = await sb.from("product_images").insert({
+          product_id: row.id,
+          storage_path: path,
+          public_url: pub.publicUrl,
+          sort_order: 0,
+        });
+        if (imgErr) throw imgErr;
+      }
+      return mapProduct(row);
+    },
+
+    async createPurchaseDraft({ purchasedOn, notes, lines }) {
+      const { data: header, error } = await sb
+        .from("purchases")
+        .insert({ purchased_on: purchasedOn, notes, status: "draft" })
+        .select()
+        .single();
+      if (error) throw error;
+      const { error: lineErr } = await sb.from("purchase_lines").insert(
+        lines.map((l) => ({
+          purchase_id: header.id,
+          product_id: l.productId,
+          qty: l.qty,
+          unit_cost: l.unitCost,
+        })),
+      );
+      if (lineErr) throw lineErr;
+      return { id: header.id };
+    },
+
+    async confirmPurchase(purchaseId) {
+      const { error } = await sb.rpc("confirm_purchase", { p_purchase_id: purchaseId });
+      if (error) throw error;
+    },
+
+    async createSaleDraft({ soldOn, notes, lines }) {
+      const { data: header, error } = await sb
+        .from("sales")
+        .insert({ sold_on: soldOn, notes, status: "draft" })
+        .select()
+        .single();
+      if (error) throw error;
+      const { error: lineErr } = await sb.from("sale_lines").insert(
+        lines.map((l) => ({
+          sale_id: header.id,
+          product_id: l.productId,
+          qty: l.qty,
+          unit_price: l.unitPrice,
+        })),
+      );
+      if (lineErr) throw lineErr;
+      return { id: header.id };
+    },
+
+    async confirmSale(saleId) {
+      const { error } = await sb.rpc("confirm_sale", { p_sale_id: saleId });
+      if (error) throw error;
+    },
+
+    async registerExpense(input) {
+      const { error } = await sb.rpc("register_expense", {
+        p_spent_on: input.spentOn,
+        p_category: input.category,
+        p_amount: input.amount,
+        p_notes: input.notes || "",
+      });
+      if (error) throw error;
+    },
+
+    async registerContribution(input) {
+      const { error } = await sb.rpc("register_contribution", {
+        p_person_name: input.personName,
+        p_amount: input.amount,
+        p_contributed_on: input.contributedOn,
+        p_notes: input.notes || "",
+      });
+      if (error) throw error;
+    },
+
+    async setWhatsappPhone(phone) {
+      const { error } = await sb
+        .from("app_settings")
+        .upsert({ key: "whatsapp_phone", value: { phone: String(phone).replace(/\D/g, "") } });
+      if (error) throw error;
+    },
+
+    async listPurchases() {
+      const { data, error } = await sb
+        .from("purchases")
+        .select("*, purchase_lines(*)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data.map((p) => ({
+        id: p.id,
+        status: p.status,
+        purchasedOn: p.purchased_on,
+        notes: p.notes,
+        lines: p.purchase_lines.map((l) => ({
+          id: l.id,
+          productId: l.product_id,
+          qty: l.qty,
+          unitCost: Number(l.unit_cost),
+          lineCost: Number(l.line_cost || 0),
+        })),
+      }));
+    },
+
+    async listSales() {
+      const { data, error } = await sb.from("sales").select("*, sale_lines(*)").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data.map((p) => ({
+        id: p.id,
+        status: p.status,
+        soldOn: p.sold_on,
+        notes: p.notes,
+        lines: p.sale_lines.map((l) => ({
+          id: l.id,
+          productId: l.product_id,
+          qty: l.qty,
+          unitPrice: Number(l.unit_price || 0),
+          unitCost: Number(l.unit_cost || 0),
+          lineRevenue: Number(l.line_revenue || 0),
+          lineCogs: Number(l.line_cogs || 0),
+        })),
+      }));
+    },
+
+    async listExpenses() {
+      const { data, error } = await sb.from("operating_expenses").select("*").order("spent_on", { ascending: false });
+      if (error) throw error;
+      return data.map((e) => ({
+        id: e.id,
+        spentOn: e.spent_on,
+        category: e.category,
+        amount: Number(e.amount),
+        notes: e.notes,
+      }));
+    },
+
+    async listContributions() {
+      const { data, error } = await sb
+        .from("capital_contributions")
+        .select("*")
+        .order("contributed_on", { ascending: false });
+      if (error) throw error;
+      return data.map((e) => ({
+        id: e.id,
+        personName: e.person_name,
+        amount: Number(e.amount),
+        contributedOn: e.contributed_on,
+        notes: e.notes,
+      }));
+    },
+
+    async listMovements() {
+      const { data, error } = await sb
+        .from("inventory_movements")
+        .select("*")
+        .order("occurred_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data.map((m) => ({
+        productId: m.product_id,
+        movementType: m.movement_type,
+        qty: m.qty,
+        unitCost: Number(m.unit_cost),
+        referenceType: m.reference_type,
+        referenceId: m.reference_id,
+        occurredAt: m.occurred_at,
+      }));
+    },
+
+    async report() {
+      const { data, error } = await sb.from("finance_report").select("*").single();
+      if (error) throw error;
+      return {
+        capital: Number(data.capital),
+        merchandisePurchased: Number(data.merchandise_purchased),
+        cogs: Number(data.cogs),
+        inventoryValue: Number(data.inventory_value),
+        salesRevenue: Number(data.sales_revenue),
+        grossProfit: Number(data.gross_profit),
+        operatingExpenses: Number(data.operating_expenses),
+        operatingResult: Number(data.operating_result),
+        estimatedCash: Number(data.estimated_cash),
+        remainingCapitalAfterPurchases: Number(data.remaining_capital_after_purchases),
+      };
+    },
+  };
+}
