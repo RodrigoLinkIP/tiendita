@@ -9,7 +9,9 @@ Copiar `.env.example` a `.env.local`:
 - `VITE_WHATSAPP_PHONE` (solo dígitos, con código de país)
 - `VITE_LOCAL_MODE=true` para trabajar sin proyecto Supabase
 
-En Vercel, las mismas variables `VITE_*`.
+En Vercel, las mismas variables `VITE_*`. Producción: `VITE_LOCAL_MODE=false`.
+
+En Supabase Auth → URL configuration, añade `https://tiendita-gold.vercel.app` y `https://tiendita-gold.vercel.app/admin.html` para recuperación de contraseña.
 
 ## Base de datos
 

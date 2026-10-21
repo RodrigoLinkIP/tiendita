@@ -44,6 +44,17 @@ export function createSupabaseStore() {
       const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) throw error;
       return this.getSession();
+    }
+
+    async requestPasswordReset(email) {
+      const redirectTo = `${window.location.origin}/admin.html`;
+      const { error } = await sb.auth.resetPasswordForEmail(String(email || "").trim(), { redirectTo });
+      if (error) throw error;
+    }
+
+    async updatePassword(password) {
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) throw error;
     },
 
     async signOut() {

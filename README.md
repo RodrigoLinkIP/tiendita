@@ -20,14 +20,15 @@ npm run dev
 
 ## Documentación
 
-- [Requisitos y preguntas abiertas](docs/REQUISITOS.md)
+- [Requisitos](docs/REQUISITOS.md)
+- [Decisiones de datos](docs/DECISIONES.md)
 - [Plan y arquitectura](docs/PLAN.md)
 - [Esquema](docs/SCHEMA.md)
 - [Despliegue](docs/DEPLOY.md)
 - [Bloqueos](docs/BLOQUEOS.md)
 - Extracto del Excel (solo lectura): `data/excel-extract/`
 
-El Excel original no se modifica. No se importan sus cifras a producción hasta resolver las preguntas de requisitos.
+Producción usa Supabase (no modo local). El Excel original no se modifica.
 
 ## Seguridad
 

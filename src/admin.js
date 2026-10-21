@@ -26,6 +26,7 @@ async function render() {
   if (!session) {
     app.innerHTML = loginView();
     bindLogin();
+    bindRecoveryIfPresent();
     return;
   }
   if (session.unauthorized) {
@@ -54,18 +55,50 @@ function loginView() {
   const localHint =
     store.mode === "local"
       ? `<p class="empty">Modo local: usa vero@local.test, rodri@local.test o sofi@local.test. La contraseña se ignora.</p>`
-      : `<p class="empty">Ingresa con el correo autorizado en Supabase Auth.</p>`;
+      : `<p class="empty">Ingresa con el correo autorizado. Si es tu primer acceso, pide un enlace para crear la contraseña.</p>`;
   return `<form class="login stack" id="login">
     <h1>Panel Venta Loca</h1>
     ${localHint}
     <label>Correo <input name="email" type="email" required></label>
     <label>Contraseña <input name="password" type="password"></label>
     <button type="submit">Entrar</button>
+    <button type="button" class="ghost" id="reset">Enviar enlace para contraseña</button>
     <p id="err" class="empty"></p>
   </form>`;
 }
 
+function bindRecoveryIfPresent() {
+  if (!store.requestPasswordReset) return;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("type") !== "recovery" && !window.location.hash.includes("type=recovery")) return;
+  app.insertAdjacentHTML(
+    "afterbegin",
+    `<form class="login stack" id="newpass"><h2>Nueva contraseña</h2><label>Contraseña <input name="password" type="password" required minlength="8"></label><button>Guardar</button><p id="perr" class="empty"></p></form>`,
+  );
+  document.getElementById("newpass").onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await store.updatePassword(new FormData(e.target).get("password"));
+      location.href = "./admin.html";
+    } catch (err) {
+      document.getElementById("perr").textContent = err.message;
+    }
+  };
+}
+
 function bindLogin() {
+  const resetBtn = document.getElementById("reset");
+  if (resetBtn && store.requestPasswordReset) {
+    resetBtn.onclick = async () => {
+      const email = document.querySelector("#login [name=email]").value;
+      try {
+        await store.requestPasswordReset(email);
+        document.getElementById("err").textContent = "Si el correo está autorizado, revisa la bandeja para crear tu contraseña.";
+      } catch (err) {
+        document.getElementById("err").textContent = err.message;
+      }
+    };
+  }
   document.getElementById("login").onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -108,7 +141,7 @@ function shell(session, hash) {
 async function renderReport(el) {
   const r = await store.report();
   el.innerHTML = `
-    <h1>Resumen financiero</h1>
+    <h1>Resumen financiero (USD)</h1>
     <div class="kpis">
       ${kpi("Capital aportado", r.capital)}
       ${kpi("Mercadería comprada", r.merchandisePurchased)}
@@ -261,7 +294,7 @@ async function renderExpenses(el) {
   const expenses = await store.listExpenses();
   el.innerHTML = `
     <h1>Gastos operativos</h1>
-    <p class="empty">No incluyen mercadería. El tablero de exhibición, si se trata como gasto, iría aquí cuando se confirme esa decisión.</p>
+    <p class="empty">No incluyen mercadería. El tablero de exhibición (USD 3.19) se registró como gasto operativo, no como stock vendible.</p>
     <form id="eform" class="stack">
       <label>Fecha <input name="spentOn" type="date" value="${today()}" required></label>
       <label>Categoría <input name="category" value="general"></label>

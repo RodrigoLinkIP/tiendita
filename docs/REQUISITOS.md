@@ -88,6 +88,10 @@ No se implementan como si fueran reglas de negocio:
 - Múltiples monedas o conversión.
 - Pedidos del catálogo público (solo contacto WhatsApp).
 
+## Preguntas (resueltas para la carga inicial)
+
+Las decisiones aplicadas están en [DECISIONES.md](DECISIONES.md).
+
 ## Preguntas abiertas (bloquean datos financieros reales)
 
 1. **Moneda:** los importes parecen dólares, pero no está escrito. ¿USD, moneda local, u otra?
