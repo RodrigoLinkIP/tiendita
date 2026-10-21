@@ -16,7 +16,7 @@ En Vercel, las mismas variables `VITE_*`.
 1. Crear proyecto Supabase.
 2. Authentication → Enable Email.
 3. Crear los 3 usuarios (Vero, Rodri, Sofi) y copiar sus UUID.
-4. SQL Editor: ejecutar `supabase/migrations/20241021120000_init.sql`.
+4. SQL Editor: ejecutar **todo** el archivo `supabase/migrations/20241021120000_init.sql` de una vez (las funciones van **después** de las tablas). Si un intento anterior falló con `admin_users does not exist`, vuelve a pegar el archivo actualizado; `CREATE SCHEMA IF NOT EXISTS` es seguro.
 5. Insertar administradores (reemplazar UUID y correos reales):
 
 ```sql
