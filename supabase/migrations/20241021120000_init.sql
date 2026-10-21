@@ -5,31 +5,6 @@ create schema if not exists private;
 
 create extension if not exists "pgcrypto";
 
--- ---------- helpers ----------
-create or replace function private.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select exists (
-    select 1
-    from public.admin_users au
-    where au.user_id = (select auth.uid())
-  );
-$$;
-
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security invoker
-set search_path = ''
-as $$
-  select private.is_admin();
-$$;
-
 -- ---------- tables ----------
 create table public.admin_users (
   user_id uuid primary key references auth.users (id) on delete cascade,
@@ -144,6 +119,31 @@ create table public.inventory_movements (
   occurred_at timestamptz not null default now(),
   created_by uuid references auth.users (id)
 );
+
+-- ---------- helpers (después de las tablas: language sql resuelve relaciones al crear) ----------
+create or replace function private.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.admin_users au
+    where au.user_id = (select auth.uid())
+  );
+$$;
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select private.is_admin();
+$$;
 
 -- ---------- confirm purchase ----------
 create or replace function private.confirm_purchase(p_purchase_id uuid)
