@@ -93,17 +93,30 @@ button, .btn {
   appearance: none;
   border: 0;
   background: var(--teal);
-  color: white;
+  color: #fff;
   padding: 0.6rem 0.95rem;
   border-radius: 0.8rem;
   cursor: pointer;
   font-weight: 700;
   text-decoration: none;
   display: inline-flex;
+  align-items: center;
   justify-content: center;
+  font: inherit;
 }
-button.secondary, .btn.secondary { background: var(--ink); }
-button.ghost, .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+button.secondary, .btn.secondary { background: var(--ink); color: #fff; }
+button.ghost, .btn.ghost {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.side button.ghost {
+  width: 100%;
+  margin-top: 0.8rem;
+  background: transparent;
+  color: #f6efe4;
+  border-color: #6d5a4c;
+}
 
 .modal {
   position: fixed; inset: 0;
@@ -115,11 +128,27 @@ button.ghost, .btn.ghost { background: transparent; color: var(--ink); border: 1
 .modal.open { display: grid; }
 .sheet {
   background: var(--card);
+  color: var(--ink);
   max-width: 32rem;
   width: 100%;
   border-radius: 1.2rem;
   padding: 1.2rem;
+  max-height: 90vh;
+  overflow: auto;
 }
+.sheet h2 { margin: 0 0 0.8rem; }
+.sheet form.stack { max-width: none; }
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+.table-wrap { overflow-x: auto; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: #fff3e4; }
+.actions { display: flex; gap: 0.35rem; }
+.actions button { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
 
 .admin-shell { display: grid; grid-template-columns: 14rem 1fr; min-height: 100vh; }
 .side {
@@ -150,11 +179,14 @@ form.stack, .stack { display: grid; gap: 0.7rem; max-width: 40rem; }
 label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
 input, select, textarea {
   font: inherit;
+  color: var(--ink);
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: 0.6rem;
-  background: white;
+  background: #fff;
 }
+.chip { color: var(--ink); }
+.chip.active { background: var(--ink); color: #fff; }
 table { width: 100%; border-collapse: collapse; background: var(--card); }
 th, td { border-bottom: 1px solid var(--line); padding: 0.55rem 0.6rem; text-align: left; font-size: 0.92rem; }
 .banner {
