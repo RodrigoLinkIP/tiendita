@@ -132,8 +132,8 @@ function openProduct(id) {
       <p class="stock ${p.available ? "" : "out"}">${availabilityLabel(p)}</p>
       ${
         links.length
-          ? `<div class="wa-list">${links
-              .map((x) => `<a class="btn" target="_blank" rel="noreferrer" href="${whatsappLink(x.phone, text)}">WhatsApp ${escapeHtml(x.label)}</a>`)
+          ? `<p class="kicker">WhatsApp</p><div class="wa-list">${links
+              .map((x) => `<a class="btn" target="_blank" rel="noreferrer" href="${whatsappLink(x.phone, text)}">${escapeHtml(x.label)}</a>`)
               .join("")}</div>`
           : `<p class="empty">WhatsApp aún no configurado.</p>`
       }

@@ -116,16 +116,16 @@ export function createSupabaseStore() {
         name: input.name.trim(),
         description: input.description || "",
         category_id: input.categoryId || null,
-        temu_url: input.temuUrl || "",
-        list_price_remote: input.listPriceRemote || 0,
         unit_sale_price: input.sellMode === "pack" ? impliedUnitPrice(input) : input.unitSalePrice || 0,
         sell_mode: input.sellMode === "pack" ? "pack" : "unit",
-        pack_qty: Number(input.packQty || 1),
-        pack_price: Number(input.packPrice || 0),
+        pack_qty: input.sellMode === "pack" ? Math.max(2, Number(input.packQty || 2)) : 1,
+        pack_price: input.sellMode === "pack" ? Number(input.packPrice || 0) : 0,
         availability_display: input.availabilityDisplay === "subject" ? "subject" : "count",
         is_published: Boolean(input.isPublished),
         archived_at: input.archivedAt || null,
       };
+      if (input.temuUrl !== undefined) payload.temu_url = input.temuUrl || "";
+      if (input.listPriceRemote !== undefined) payload.list_price_remote = input.listPriceRemote || 0;
       let row;
       if (input.id) {
         const { data, error } = await sb.from("products").update(payload).eq("id", input.id).select().single();

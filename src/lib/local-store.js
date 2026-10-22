@@ -124,11 +124,12 @@ export function createLocalStore() {
           name: input.name.trim(),
           description: input.description?.trim() || "",
           categoryId: input.categoryId || null,
-          temuUrl: input.temuUrl || "",
-          listPriceRemote: Number(input.listPriceRemote || 0),
+          temuUrl: input.temuUrl !== undefined ? input.temuUrl || "" : existing?.temuUrl || "",
+          listPriceRemote:
+            input.listPriceRemote !== undefined ? Number(input.listPriceRemote || 0) : Number(existing?.listPriceRemote || 0),
           sellMode: input.sellMode === "pack" ? "pack" : "unit",
-          packQty: Number(input.packQty || 1),
-          packPrice: Number(input.packPrice || 0),
+          packQty: input.sellMode === "pack" ? Math.max(2, Number(input.packQty || 2)) : 1,
+          packPrice: input.sellMode === "pack" ? Number(input.packPrice || 0) : 0,
           unitSalePrice:
             input.sellMode === "pack" ? impliedUnitPrice(input) : Number(input.unitSalePrice || 0),
           availabilityDisplay: input.availabilityDisplay === "subject" ? "subject" : "count",

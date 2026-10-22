@@ -186,8 +186,6 @@ function productForm(categories, p = {}) {
     <label>Categoría <select name="categoryId">${categories
       .map((c) => `<option value="${esc(c.id)}" ${p.categoryId === c.id ? "selected" : ""}>${esc(c.name)}</option>`)
       .join("")}</select></label>
-    <label>Link Temu <input name="temuUrl" value="${esc(p.temuUrl || "")}"></label>
-    <label>Precio real Temu (informativo) <input name="listPriceRemote" type="number" step="0.01" value="${esc(p.listPriceRemote ?? 0)}"></label>
     <label>Cómo se vende
       <select name="sellMode">
         <option value="pack" ${pack ? "selected" : ""}>Por paquete (ej. 2 por 0.25)</option>
@@ -203,10 +201,8 @@ function productForm(categories, p = {}) {
         <option value="count" ${p.availabilityDisplay !== "subject" ? "selected" : ""}>Mostrar cuántos quedan</option>
       </select>
     </label>
-    <p class="empty">Puedes subir varias fotos. URL de foto (modo local): un enlace por línea, solo para probar en tu computadora. Foto (Supabase Storage): elige varios archivos a la vez; esas son las que ve el público.</p>
     ${(p.images || []).length ? `<div class="thumbs">${(p.images || []).map((img) => `<figure><img src="${esc(img.url)}" alt=""><button type="button" class="ghost del-img" data-id="${esc(img.id)}">×</button></figure>`).join("")}</div>` : ""}
-    <label>URLs de foto (modo local, una por línea) <textarea name="imageUrls" rows="2"></textarea></label>
-    <label>Fotos (Supabase Storage) <input name="imageFiles" type="file" accept="image/*" multiple></label>
+    <label>Fotos <input name="imageFiles" type="file" accept="image/*" multiple></label>
     <label class="check"><input type="checkbox" name="isPublished" ${p.isPublished ? "checked" : ""}> Publicado en catálogo</label>
     <button type="submit">${p.id ? "Guardar cambios" : "Crear producto"}</button>
     <p id="ferr" class="banner" hidden></p>
@@ -216,10 +212,22 @@ function productForm(categories, p = {}) {
 function toggleSellFields(root = document) {
   const mode = root.querySelector("[name=sellMode]")?.value;
   root.querySelectorAll(".pack-only").forEach((el) => {
-    el.hidden = mode !== "pack";
+    const on = mode === "pack";
+    el.hidden = !on;
+    el.querySelectorAll("input, select, textarea").forEach((i) => {
+      i.disabled = !on;
+      if (i.name === "packQty") {
+        i.min = on ? "2" : "1";
+        i.removeAttribute("required");
+      }
+    });
   });
   root.querySelectorAll(".unit-only").forEach((el) => {
-    el.hidden = mode !== "unit";
+    const on = mode === "unit";
+    el.hidden = !on;
+    el.querySelectorAll("input, select, textarea").forEach((i) => {
+      i.disabled = !on;
+    });
   });
 }
 
@@ -229,17 +237,11 @@ function productPayload(fd) {
     name: fd.get("name"),
     description: fd.get("description"),
     categoryId: fd.get("categoryId"),
-    temuUrl: fd.get("temuUrl"),
-    listPriceRemote: fd.get("listPriceRemote"),
     sellMode: fd.get("sellMode"),
     packQty: fd.get("packQty"),
     packPrice: fd.get("packPrice"),
     unitSalePrice: fd.get("unitSalePrice"),
     availabilityDisplay: fd.get("availabilityDisplay"),
-    imageUrls: String(fd.get("imageUrls") || "")
-      .split(/\n/)
-      .map((s) => s.trim())
-      .filter(Boolean),
     imageFiles: [...(document.querySelector("#pform [name=imageFiles]")?.files || [])],
     isPublished: fd.get("isPublished") === "on",
   };
@@ -279,14 +281,13 @@ async function renderProducts(el) {
   const [products, categories] = await Promise.all([store.listAllProducts(), store.listCategories()]);
   el.innerHTML = `
     <h1>Productos</h1>
-    <p class="empty">El inventario vive aquí. Clic en una fila o en Editar para cambiar nombre, precio u otros datos. Las compras y ventas se registran en un recuadro, no en un formulario eterno.</p>
+    <p class="empty">Catálogo público: nombre, cómo se vende, fotos y publicación. El stock y Temu están en Compras.</p>
     <div class="toolbar">
       <button type="button" id="new-p">Nuevo producto</button>
-      <button type="button" class="secondary" id="new-buy">Registrar compra</button>
       <button type="button" class="secondary" id="new-sale">Registrar venta</button>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Nombre</th><th>Categoría</th><th>Stock</th><th>Costo prom.</th><th>Se vende</th><th>Público</th><th></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Categoría</th><th>Se vende</th><th>Público</th><th></th></tr></thead>
       <tbody>
         ${
           products.filter((p) => !p.archivedAt).length
@@ -296,19 +297,16 @@ async function renderProducts(el) {
                   (p) => `<tr class="clickable" data-id="${esc(p.id)}">
                     <td>${esc(p.name)}</td>
                     <td>${esc(p.categoryName || "")}</td>
-                    <td>${p.stockQty}</td>
-                    <td>${unitMoney(p.avgUnitCost)}</td>
                     <td>${esc(publicPriceLabel(p))}<br><span class="kicker">${esc(availabilityLabel({ ...p, available: p.stockQty > 0 }))}</span></td>
                     <td>${p.isPublished ? "sí" : "no"}</td>
                     <td class="actions">
                       <button type="button" class="ghost edit" data-id="${esc(p.id)}">Editar</button>
-                      <button type="button" class="ghost wipe" data-id="${esc(p.id)}">Vaciar stock</button>
                       <button type="button" class="ghost drop" data-id="${esc(p.id)}">Eliminar</button>
                     </td>
                   </tr>`,
                 )
                 .join("")
-            : `<tr><td colspan="7">Sin productos.</td></tr>`
+            : `<tr><td colspan="5">Sin productos.</td></tr>`
         }
       </tbody>
     </table></div>`;
@@ -322,7 +320,6 @@ async function renderProducts(el) {
   };
 
   el.querySelector("#new-p").onclick = () => openProduct("");
-  el.querySelector("#new-buy").onclick = () => openPurchaseModal(products);
   el.querySelector("#new-sale").onclick = () => openSaleModal(products);
   el.querySelectorAll("tr.clickable").forEach((tr) => {
     tr.onclick = (e) => {
@@ -336,14 +333,6 @@ async function renderProducts(el) {
       openProduct(btn.dataset.id);
     };
   });
-  el.querySelectorAll("button.wipe").forEach((btn) => {
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      if (!confirm("¿Sacar todo el inventario de este producto? El historial de compras se conserva.")) return;
-      await store.writeOffStock(btn.dataset.id);
-      await render();
-    };
-  });
   el.querySelectorAll("button.drop").forEach((btn) => {
     btn.onclick = async (e) => {
       e.stopPropagation();
@@ -354,60 +343,32 @@ async function renderProducts(el) {
   });
 }
 
-function openPurchaseModal(products) {
+function openPurchaseModal(products, productId = "") {
   const live = products.filter((p) => !p.archivedAt);
-  openSheet(`<h2>Registrar compra</h2>
-    <p class="empty">Entra stock al costo. Debajo defines cómo se ofrecerá al público: paquete (2 por 0.25) o unidad con el precio que ustedes elijan.</p>
+  const selected = productId || live[0]?.id || "";
+  openSheet(`<h2>Entrar stock</h2>
+    <p class="empty">Registra lo que llegó. El precio de venta se define en Productos; aquí entra inventario al costo.</p>
     <form id="cform" class="stack">
       <label>Fecha <input name="purchasedOn" type="date" value="${today()}" required></label>
       <label>Notas <input name="notes"></label>
-      <label>Producto <select name="productId">${live.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select></label>
+      <label>Producto <select name="productId">${live
+        .map((p) => `<option value="${esc(p.id)}" ${p.id === selected ? "selected" : ""}>${esc(p.name)} (${p.stockQty})</option>`)
+        .join("")}</select></label>
       <label>Cantidad que llegó (unidades) <input name="qty" type="number" min="1" step="1" required></label>
       <label>Costo unitario de compra <input name="unitCost" type="number" min="0" step="0.0001" required></label>
-      <label>Cómo se venderá
-        <select name="sellMode">
-          <option value="pack">Por paquete</option>
-          <option value="unit">Por unidad</option>
-        </select>
-      </label>
-      <label class="pack-only">Unidades por paquete <input name="packQty" type="number" min="2" step="1" value="2"></label>
-      <label class="pack-only">Precio del paquete <input name="packPrice" type="number" min="0" step="0.0001" value="0.25"></label>
-      <label class="unit-only">Precio de venta por unidad <input name="unitSalePrice" type="number" min="0" step="0.0001"></label>
-      <button type="submit">Confirmar compra</button>
+      <button type="submit">Confirmar entrada</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
-  const fillSell = () => {
-    const p = live.find((x) => x.id === document.querySelector("#cform [name=productId]").value);
-    if (!p) return;
-    const form = document.getElementById("cform");
-    form.sellMode.value = p.sellMode || "unit";
-    form.packQty.value = p.packQty || 2;
-    form.packPrice.value = p.packPrice || "";
-    form.unitSalePrice.value = p.unitSalePrice || "";
-    toggleSellFields(form);
-  };
-  document.querySelector("#cform [name=productId]").onchange = fillSell;
-  document.querySelector("#cform [name=sellMode]").onchange = () => toggleSellFields(document.getElementById("cform"));
-  fillSell();
   document.getElementById("cform").onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     try {
-      const product = live.find((x) => x.id === fd.get("productId"));
       const draft = await store.createPurchaseDraft({
         purchasedOn: fd.get("purchasedOn"),
         notes: fd.get("notes"),
         lines: [{ productId: fd.get("productId"), qty: fd.get("qty"), unitCost: fd.get("unitCost") }],
       });
       await store.confirmPurchase(draft.id);
-      await store.saveProduct({
-        ...product,
-        sellMode: fd.get("sellMode"),
-        packQty: fd.get("packQty"),
-        packPrice: fd.get("packPrice"),
-        unitSalePrice: fd.get("unitSalePrice"),
-        isPublished: product.isPublished,
-      });
       await afterSave();
     } catch (err) {
       const box = document.getElementById("ferr");
@@ -441,10 +402,18 @@ function openSaleModal(products) {
       p.sellMode === "pack" ? `Oferta: ${publicPriceLabel(p)}` : "Venta por unidad: puedes poner el precio de esta venta.";
     form.unitPrice.value = p.unitSalePrice;
     form.querySelectorAll(".pack-only").forEach((el) => {
-      el.hidden = p.sellMode !== "pack";
+      const on = p.sellMode === "pack";
+      el.hidden = !on;
+      el.querySelectorAll("input").forEach((i) => {
+        i.disabled = !on;
+      });
     });
     form.querySelectorAll(".unit-only").forEach((el) => {
-      el.hidden = p.sellMode === "pack";
+      const on = p.sellMode !== "pack";
+      el.hidden = !on;
+      el.querySelectorAll("input").forEach((i) => {
+        i.disabled = !on;
+      });
     });
   };
   form.productId.onchange = fill;
@@ -479,13 +448,86 @@ function openSaleModal(products) {
   };
 }
 
+function temuCell(p) {
+  const url = String(p.temuUrl || "").trim();
+  if (!url) return `<span class="empty">Sin link</span>`;
+  return `<a href="${esc(url)}" target="_blank" rel="noreferrer">Abrir Temu</a>`;
+}
+
+function openTemuModal(product) {
+  openSheet(`<h2>Temu — ${esc(product.name)}</h2>
+    <form id="tform" class="stack">
+      <label>Link de Temu <input name="temuUrl" type="text" value="${esc(product.temuUrl || "")}" placeholder="https://"></label>
+      <label>Precio en Temu <input name="listPriceRemote" type="number" min="0" step="0.0001" value="${esc(product.listPriceRemote || "")}"></label>
+      <button type="submit">Guardar</button>
+      <p id="ferr" class="banner" hidden></p>
+    </form>`);
+  document.getElementById("tform").onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      await store.saveProduct({
+        ...product,
+        temuUrl: fd.get("temuUrl"),
+        listPriceRemote: fd.get("listPriceRemote"),
+      });
+      await afterSave();
+    } catch (err) {
+      const box = document.getElementById("ferr");
+      box.hidden = false;
+      box.textContent = err.message;
+    }
+  };
+}
+
 async function renderPurchases(el) {
   const [products, purchases] = await Promise.all([store.listAllProducts(), store.listPurchases()]);
+  const live = products.filter((p) => !p.archivedAt);
   el.innerHTML = `
-    <h1>Compras de mercadería</h1>
-    <div class="toolbar"><button type="button" id="new-buy">Nueva compra</button></div>
+    <h1>Posibles compras</h1>
+    <p class="empty">Productos que pueden volver a pedirse. Aquí va el link y el precio de Temu, y el stock que hay ahora.</p>
+    <div class="toolbar"><button type="button" id="new-buy">Entrar stock</button></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Producto</th><th>Stock</th><th>Precio Temu</th><th>Link</th><th></th></tr></thead>
+      <tbody>
+        ${
+          live.length
+            ? live
+                .map(
+                  (p) => `<tr>
+                    <td>${esc(p.name)}</td>
+                    <td>${p.stockQty}</td>
+                    <td>${p.listPriceRemote ? unitMoney(p.listPriceRemote) : "—"}</td>
+                    <td>${temuCell(p)}</td>
+                    <td class="actions">
+                      <button type="button" class="ghost temu" data-id="${esc(p.id)}">Temu</button>
+                      <button type="button" class="ghost stock" data-id="${esc(p.id)}">Entrar stock</button>
+                      <button type="button" class="ghost wipe" data-id="${esc(p.id)}">Vaciar</button>
+                    </td>
+                  </tr>`,
+                )
+                .join("")
+            : `<tr><td colspan="5">Sin productos para reponer.</td></tr>`
+        }
+      </tbody>
+    </table></div>
+    <h2>Historial de entradas</h2>
     ${tablePurchases(purchases, products)}`;
-  el.querySelector("#new-buy").onclick = () => openPurchaseModal(products);
+  el.querySelector("#new-buy").onclick = () => openPurchaseModal(live);
+  el.querySelectorAll("button.temu").forEach((btn) => {
+    const p = live.find((x) => x.id === btn.dataset.id);
+    if (p) btn.onclick = () => openTemuModal(p);
+  });
+  el.querySelectorAll("button.stock").forEach((btn) => {
+    btn.onclick = () => openPurchaseModal(live, btn.dataset.id);
+  });
+  el.querySelectorAll("button.wipe").forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm("¿Sacar todo el inventario de este producto? El historial de compras se conserva.")) return;
+      await store.writeOffStock(btn.dataset.id);
+      await render();
+    };
+  });
 }
 
 function tablePurchases(purchases, products) {
