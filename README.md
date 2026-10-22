@@ -1,4 +1,4 @@
-# Venta Loca
+# VRS Store
 
 Aplicación web para un negocio pequeño de productos comprados en Temu: catálogo público y panel para tres administradoras (Vero, Rodri, Sofi).
 
