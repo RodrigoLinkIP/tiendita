@@ -243,7 +243,7 @@ button.ghost, .btn.ghost {
 }
 .dots span.on { background: var(--coral); }
 .product-sheet {
-  max-width: 30rem;
+  max-width: 32rem;
   padding: 0 0 1.25rem;
   display: grid;
   gap: 0;
@@ -253,16 +253,29 @@ button.ghost, .btn.ghost {
   border-radius: 1.2rem 1.2rem 0 0;
   overflow: hidden;
 }
-.product-sheet .carousel-frame,
-.product-sheet .carousel .carousel-frame img {
+.product-sheet .carousel-frame {
+  position: relative;
+  width: 100%;
+  height: min(26rem, 52vh);
+  min-height: 17rem;
   border-radius: 0;
-  height: 20.5rem;
-  background: #efe3d4;
+  background: #e8d8c6;
+}
+.product-sheet .carousel .carousel-frame {
+  height: min(26rem, 52vh);
 }
 .product-sheet .carousel-frame img,
 .product-sheet .carousel .carousel-frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   object-fit: contain;
   object-position: center;
+  border-radius: 0;
+  background: transparent;
 }
 .product-copy {
   padding: 1.25rem 1.35rem 0.4rem;
