@@ -154,6 +154,24 @@ async function afterSave() {
   await render();
 }
 
+function lockSubmit(form, label = "Guardando…") {
+  if (form.dataset.busy === "1") return null;
+  form.dataset.busy = "1";
+  const buttons = [...form.querySelectorAll("button[type=submit], button:not([type])")];
+  const original = buttons.map((b) => ({ text: b.textContent, disabled: b.disabled }));
+  buttons.forEach((b) => {
+    b.disabled = true;
+    b.textContent = label;
+  });
+  return () => {
+    form.dataset.busy = "";
+    buttons.forEach((b, i) => {
+      b.disabled = original[i].disabled;
+      b.textContent = original[i].text;
+    });
+  };
+}
+
 async function renderReport(el) {
   const r = await store.report();
   el.innerHTML = `
@@ -252,12 +270,15 @@ function bindProductForm(categoriesLookup) {
   document.querySelector("#pform [name=sellMode]")?.addEventListener("change", () => toggleSellFields());
   document.getElementById("pform").onsubmit = async (e) => {
     e.preventDefault();
+    const unlock = lockSubmit(e.target);
+    if (!unlock) return;
     const fd = new FormData(e.target);
     const errBox = document.getElementById("ferr");
     try {
       await store.saveProduct(productPayload(fd));
       await afterSave();
     } catch (err) {
+      unlock();
       errBox.hidden = false;
       errBox.textContent = err.message;
     }
@@ -361,6 +382,8 @@ function openPurchaseModal(products, productId = "") {
     </form>`);
   document.getElementById("cform").onsubmit = async (e) => {
     e.preventDefault();
+    const unlock = lockSubmit(e.target);
+    if (!unlock) return;
     const fd = new FormData(e.target);
     try {
       const draft = await store.createPurchaseDraft({
@@ -371,6 +394,7 @@ function openPurchaseModal(products, productId = "") {
       await store.confirmPurchase(draft.id);
       await afterSave();
     } catch (err) {
+      unlock();
       const box = document.getElementById("ferr");
       box.hidden = false;
       box.textContent = err.message;
@@ -420,6 +444,8 @@ function openSaleModal(products) {
   fill();
   form.onsubmit = async (e) => {
     e.preventDefault();
+    const unlock = lockSubmit(e.target);
+    if (!unlock) return;
     const fd = new FormData(e.target);
     const p = live.find((x) => x.id === fd.get("productId"));
     try {
@@ -441,6 +467,7 @@ function openSaleModal(products) {
       await store.confirmSale(draft.id);
       await afterSave();
     } catch (err) {
+      unlock();
       const box = document.getElementById("ferr");
       box.hidden = false;
       box.textContent = err.message;
@@ -464,6 +491,8 @@ function openTemuModal(product) {
     </form>`);
   document.getElementById("tform").onsubmit = async (e) => {
     e.preventDefault();
+    const unlock = lockSubmit(e.target);
+    if (!unlock) return;
     const fd = new FormData(e.target);
     try {
       await store.saveProduct({
@@ -473,6 +502,7 @@ function openTemuModal(product) {
       });
       await afterSave();
     } catch (err) {
+      unlock();
       const box = document.getElementById("ferr");
       box.hidden = false;
       box.textContent = err.message;
@@ -582,10 +612,13 @@ async function renderExpenses(el) {
       </form>`);
     document.getElementById("eform").onsubmit = async (e) => {
       e.preventDefault();
+      const unlock = lockSubmit(e.target);
+      if (!unlock) return;
       try {
         await store.registerExpense(Object.fromEntries(new FormData(e.target).entries()));
         await afterSave();
       } catch (err) {
+        unlock();
         const box = document.getElementById("ferr");
         box.hidden = false;
         box.textContent = err.message;
@@ -612,10 +645,13 @@ async function renderCapital(el) {
       </form>`);
     document.getElementById("kform").onsubmit = async (e) => {
       e.preventDefault();
+      const unlock = lockSubmit(e.target);
+      if (!unlock) return;
       try {
         await store.registerContribution(Object.fromEntries(new FormData(e.target).entries()));
         await afterSave();
       } catch (err) {
+        unlock();
         const box = document.getElementById("ferr");
         box.hidden = false;
         box.textContent = err.message;
@@ -668,20 +704,30 @@ async function renderSettings(el) {
     }`;
   el.querySelector("#aform").onsubmit = async (e) => {
     e.preventDefault();
+    const unlock = lockSubmit(e.target);
+    if (!unlock) return;
     const fd = new FormData(e.target);
-    await store.setWhatsappPhones([0, 1, 2].map((i) => ({ label: fd.get(`label${i}`), phone: fd.get(`phone${i}`) })));
-    document.getElementById("ok").textContent = "WhatsApp guardado.";
+    try {
+      await store.setWhatsappPhones([0, 1, 2].map((i) => ({ label: fd.get(`label${i}`), phone: fd.get(`phone${i}`) })));
+      document.getElementById("ok").textContent = "WhatsApp guardado.";
+    } finally {
+      unlock();
+    }
   };
   const pw = el.querySelector("#pwform");
   if (pw) {
     pw.onsubmit = async (e) => {
       e.preventDefault();
+      const unlock = lockSubmit(e.target);
+      if (!unlock) return;
       try {
         await store.updatePassword(new FormData(e.target).get("password"));
         document.getElementById("pwok").textContent = "Contraseña actualizada.";
         e.target.reset();
       } catch (err) {
         document.getElementById("pwok").textContent = err.message;
+      } finally {
+        unlock();
       }
     };
   }
