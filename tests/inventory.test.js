@@ -155,7 +155,7 @@ describe("whatsapp", () => {
 describe("oferta pública", () => {
   it("muestra paquete, no el unitario interno", () => {
     const p = { sellMode: "pack", packQty: 2, packPrice: 0.25, unitSalePrice: 0.125, stockQty: 50, available: true, availabilityDisplay: "subject" };
-    expect(publicPriceLabel(p)).toMatch(/2 por/);
+    expect(publicPriceLabel(p)).toMatch(/2 por \$0,25/);
     expect(impliedUnitPrice(p)).toBeCloseTo(0.125);
     expect(availabilityLabel(p)).toBe("Sujeto a disponibilidad");
   });
