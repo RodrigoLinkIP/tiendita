@@ -64,7 +64,7 @@ function loginView() {
       ? `<p class="empty">Modo local: usa vero@local.test, rodri@local.test o sofi@local.test. La contraseña se ignora.</p>`
       : `<p class="empty">Ingresa con el correo autorizado. Puedes cambiar la contraseña después, en Ajustes.</p>`;
   return `<form class="login stack" id="login">
-    <h1>Panel Venta Loca</h1>
+    <h1>Panel VRS Store</h1>
     ${localHint}
     <label>Correo <input name="email" type="email" required></label>
     <label>Contraseña <input name="password" type="password"></label>
@@ -122,7 +122,7 @@ function shell(session, hash) {
   ];
   return `<div class="admin-shell">
     <aside class="side">
-      <div class="brand">Venta <span>Loca</span></div>
+      <div class="brand">VRS <span>Store</span></div>
       <p>${esc(session.displayName)}</p>
       ${links.map(([href, label]) => `<a class="${hash === href ? "active" : ""}" href="${href}">${label}</a>`).join("")}
       <button class="ghost" id="logout" type="button">Salir</button>
