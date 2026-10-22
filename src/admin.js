@@ -221,7 +221,7 @@ function productForm(categories, p = {}) {
     </label>
     ${(p.images || []).length ? `<div class="thumbs">${(p.images || []).map((img) => `<figure><img src="${esc(img.url)}" alt=""><button type="button" class="ghost del-img" data-id="${esc(img.id)}">×</button></figure>`).join("")}</div>` : ""}
     <label>Fotos <input name="imageFiles" type="file" accept="image/*" multiple></label>
-    <label class="check"><input type="checkbox" name="isPublished" ${p.isPublished ? "checked" : ""}> Publicado en catálogo</label>
+    <label class="check"><input type="checkbox" name="isPublished" ${p.isPublished ? "checked" : ""}> Mostrar en el catálogo público</label>
     <button type="submit">${p.id ? "Guardar cambios" : "Crear producto"}</button>
     <p id="ferr" class="banner" hidden></p>
   </form>`;
@@ -364,52 +364,6 @@ async function renderProducts(el) {
   });
 }
 
-function openPurchaseModal(products, productId = "") {
-  const live = products.filter((p) => !p.archivedAt);
-  const selected = productId || live[0]?.id || "";
-  openSheet(`<h2>Entrar stock</h2>
-    <p class="empty">Registra lo que llegó. El precio de venta se define en Productos; aquí entra inventario al costo.</p>
-    <form id="cform" class="stack">
-      <label>Fecha <input name="purchasedOn" type="date" value="${today()}" required></label>
-      <label>Notas <input name="notes"></label>
-      <label>Producto <select name="productId">${live
-        .map((p) => `<option value="${esc(p.id)}" ${p.id === selected ? "selected" : ""}>${esc(p.name)} (${p.stockQty})</option>`)
-        .join("")}</select></label>
-      <label>Cantidad que llegó (unidades) <input name="qty" type="number" min="1" step="1" required></label>
-      <label>Costo unitario de compra <input name="unitCost" type="number" min="0" step="0.0001" required></label>
-      <button type="submit">Confirmar entrada</button>
-      <p id="ferr" class="banner" hidden></p>
-    </form>`);
-  const fillCost = () => {
-    const form = document.getElementById("cform");
-    const p = live.find((x) => x.id === form.productId.value);
-    const cost = p ? unitBuyCost(p) : 0;
-    if (cost > 0) form.unitCost.value = round4(cost);
-  };
-  document.querySelector("#cform [name=productId]").onchange = fillCost;
-  fillCost();
-  document.getElementById("cform").onsubmit = async (e) => {
-    e.preventDefault();
-    const unlock = lockSubmit(e.target);
-    if (!unlock) return;
-    const fd = new FormData(e.target);
-    try {
-      const draft = await store.createPurchaseDraft({
-        purchasedOn: fd.get("purchasedOn"),
-        notes: fd.get("notes"),
-        lines: [{ productId: fd.get("productId"), qty: fd.get("qty"), unitCost: fd.get("unitCost") }],
-      });
-      await store.confirmPurchase(draft.id);
-      await afterSave();
-    } catch (err) {
-      unlock();
-      const box = document.getElementById("ferr");
-      box.hidden = false;
-      box.textContent = err.message;
-    }
-  };
-}
-
 function openSaleModal(products) {
   const live = products.filter((p) => !p.archivedAt);
   openSheet(`<h2>Registrar venta</h2>
@@ -489,15 +443,10 @@ function temuCell(p) {
   return `<a href="${esc(url)}" target="_blank" rel="noreferrer">Abrir Temu</a>`;
 }
 
-function round4(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return "";
-  return String(Math.round(x * 10000) / 10000);
-}
-
-function openRestockModal(product) {
+function openRestockModal(product = {}) {
+  const isNew = !product.id;
   const buy = unitBuyCost(product);
-  openSheet(`<h2>Editar compra — ${esc(product.name)}</h2>
+  openSheet(`<h2>${isNew ? "Nuevo producto en stock" : `Editar compra — ${esc(product.name)}`}</h2>
     <p class="empty">El costo por pieza es el precio de un producto en Temu dividido entre las unidades que trae ese producto (no entre cuántos productos hay en stock).</p>
     <form id="rform" class="stack">
       <label>Nombre <input name="name" required value="${esc(product.name || "")}"></label>
@@ -506,7 +455,7 @@ function openRestockModal(product) {
       <label>Unidades que trae cada producto <input name="remotePackQty" type="number" min="1" step="1" value="${esc(product.remotePackQty || 1)}"></label>
       <label>Costo por unidad <input id="unit-buy" type="text" readonly tabindex="-1" value="${buy ? unitMoney(buy) : "—"}"></label>
       <label>Stock actual (piezas) <input name="stockQty" type="number" min="0" step="1" required value="${esc(product.stockQty ?? 0)}"></label>
-      <button type="submit">Guardar cambios</button>
+      <button type="submit">${isNew ? "Agregar al stock" : "Guardar cambios"}</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
   const form = document.getElementById("rform");
@@ -525,16 +474,42 @@ function openRestockModal(product) {
     const fd = new FormData(form);
     const price = Number(fd.get("listPriceRemote") || 0);
     const units = Math.max(1, Math.floor(Number(fd.get("remotePackQty") || 1)));
+    const qty = Math.max(0, Math.floor(Number(fd.get("stockQty") || 0)));
+    const unitCost = units > 0 && price > 0 ? price / units : 0;
     try {
-      await store.saveProduct({
-        ...product,
-        name: fd.get("name"),
-        temuUrl: fd.get("temuUrl"),
-        listPriceRemote: price,
-        remotePackQty: units,
-        stockQty: fd.get("stockQty"),
-        avgUnitCost: units > 0 && price > 0 ? price / units : product.avgUnitCost,
-      });
+      if (isNew) {
+        const created = await store.saveProduct({
+          name: fd.get("name"),
+          description: "",
+          temuUrl: fd.get("temuUrl"),
+          listPriceRemote: price,
+          remotePackQty: units,
+          sellMode: "unit",
+          unitSalePrice: 0,
+          availabilityDisplay: "subject",
+          stockQty: 0,
+          avgUnitCost: 0,
+          isPublished: false,
+        });
+        if (qty > 0) {
+          const draft = await store.createPurchaseDraft({
+            purchasedOn: today(),
+            notes: "Alta de producto",
+            lines: [{ productId: created.id, qty, unitCost }],
+          });
+          await store.confirmPurchase(draft.id);
+        }
+      } else {
+        await store.saveProduct({
+          ...product,
+          name: fd.get("name"),
+          temuUrl: fd.get("temuUrl"),
+          listPriceRemote: price,
+          remotePackQty: units,
+          stockQty: qty,
+          avgUnitCost: unitCost || product.avgUnitCost,
+        });
+      }
       await afterSave();
     } catch (err) {
       unlock();
@@ -550,7 +525,7 @@ async function renderPurchases(el) {
   const live = products.filter((p) => !p.archivedAt);
   el.innerHTML = `
     <h1>Posibles compras</h1>
-    <p class="empty">Edita cada producto: el costo por unidad es precio de un producto ÷ unidades que trae. Clic en la fila o en Editar.</p>
+    <p class="empty">Entrar stock crea un producto nuevo con los mismos datos de compra. También puedes editar o eliminar cualquiera.</p>
     <div class="toolbar"><button type="button" id="new-buy">Entrar stock</button></div>
     <div class="table-wrap"><table>
       <thead><tr><th>Producto</th><th>Stock</th><th>Precio compra</th><th>Trae</th><th>Costo/u</th><th>Link</th><th></th></tr></thead>
@@ -569,8 +544,7 @@ async function renderPurchases(el) {
                     <td>${temuCell(p)}</td>
                     <td class="actions">
                       <button type="button" class="ghost edit-buy" data-id="${esc(p.id)}">Editar</button>
-                      <button type="button" class="ghost stock" data-id="${esc(p.id)}">Entrar stock</button>
-                      <button type="button" class="ghost wipe" data-id="${esc(p.id)}">Vaciar</button>
+                      <button type="button" class="ghost drop" data-id="${esc(p.id)}">Eliminar</button>
                     </td>
                   </tr>`;
                 })
@@ -581,7 +555,7 @@ async function renderPurchases(el) {
     </table></div>
     <h2>Historial de entradas</h2>
     ${tablePurchases(purchases, products)}`;
-  el.querySelector("#new-buy").onclick = () => openPurchaseModal(live);
+  el.querySelector("#new-buy").onclick = () => openRestockModal({});
   const openEdit = (id) => {
     const p = live.find((x) => x.id === id);
     if (p) openRestockModal(p);
@@ -598,13 +572,11 @@ async function renderPurchases(el) {
       openEdit(btn.dataset.id);
     };
   });
-  el.querySelectorAll("button.stock").forEach((btn) => {
-    btn.onclick = () => openPurchaseModal(live, btn.dataset.id);
-  });
-  el.querySelectorAll("button.wipe").forEach((btn) => {
-    btn.onclick = async () => {
-      if (!confirm("¿Sacar todo el inventario de este producto? El historial de compras se conserva.")) return;
-      await store.writeOffStock(btn.dataset.id);
+  el.querySelectorAll("button.drop").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm("¿Eliminar este producto del catálogo y vaciar el stock? El historial de compras y ventas se conserva.")) return;
+      await store.archiveProduct(btn.dataset.id);
       await render();
     };
   });

@@ -348,6 +348,21 @@ tr.clickable:hover { background: #fff3e4; }
 
 form.stack, .stack { display: grid; gap: 0.7rem; max-width: 40rem; }
 label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
+label.check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+label.check input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  accent-color: var(--teal);
+  flex: 0 0 auto;
+}
 input, select, textarea {
   font: inherit;
   color: var(--ink);
