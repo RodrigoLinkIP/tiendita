@@ -127,14 +127,20 @@ export function createLocalStore() {
           temuUrl: input.temuUrl !== undefined ? input.temuUrl || "" : existing?.temuUrl || "",
           listPriceRemote:
             input.listPriceRemote !== undefined ? Number(input.listPriceRemote || 0) : Number(existing?.listPriceRemote || 0),
+          remotePackQty:
+            input.remotePackQty !== undefined
+              ? Math.max(1, Math.floor(Number(input.remotePackQty || 1)))
+              : Math.max(1, Number(existing?.remotePackQty || 1)),
           sellMode: input.sellMode === "pack" ? "pack" : "unit",
           packQty: input.sellMode === "pack" ? Math.max(2, Number(input.packQty || 2)) : 1,
           packPrice: input.sellMode === "pack" ? Number(input.packPrice || 0) : 0,
           unitSalePrice:
             input.sellMode === "pack" ? impliedUnitPrice(input) : Number(input.unitSalePrice || 0),
           availabilityDisplay: input.availabilityDisplay === "subject" ? "subject" : "count",
-          stockQty: existing?.stockQty ?? 0,
-          avgUnitCost: existing?.avgUnitCost ?? 0,
+          stockQty:
+            input.stockQty !== undefined ? Math.max(0, Math.floor(Number(input.stockQty || 0))) : (existing?.stockQty ?? 0),
+          avgUnitCost:
+            input.avgUnitCost !== undefined ? Math.max(0, Number(input.avgUnitCost || 0)) : (existing?.avgUnitCost ?? 0),
           isPublished: Boolean(input.isPublished),
           archivedAt: existing?.archivedAt || null,
         };
@@ -379,6 +385,7 @@ export function fictionalCatalog() {
         categoryId: "cat-stickers",
         temuUrl: "",
         listPriceRemote: 2.0,
+        remotePackQty: 50,
         unitSalePrice: 0.15,
         sellMode: "pack",
         packQty: 2,
@@ -395,6 +402,7 @@ export function fictionalCatalog() {
         categoryId: "cat-pines",
         temuUrl: "",
         listPriceRemote: 3.0,
+        remotePackQty: 1,
         unitSalePrice: 1.5,
         sellMode: "unit",
         packQty: 1,

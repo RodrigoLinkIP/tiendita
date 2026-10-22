@@ -1,6 +1,6 @@
 import { getStore, fictionalCatalog } from "./lib/store.js";
 import { money, unitMoney } from "./lib/money.js";
-import { impliedUnitPrice, publicPriceLabel, availabilityLabel } from "./lib/offer.js";
+import { impliedUnitPrice, publicPriceLabel, availabilityLabel, unitBuyCost } from "./lib/offer.js";
 
 const store = getStore();
 const app = document.getElementById("app");
@@ -380,6 +380,14 @@ function openPurchaseModal(products, productId = "") {
       <button type="submit">Confirmar entrada</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
+  const fillCost = () => {
+    const form = document.getElementById("cform");
+    const p = live.find((x) => x.id === form.productId.value);
+    const cost = p ? unitBuyCost(p) : 0;
+    if (cost > 0) form.unitCost.value = round4(cost);
+  };
+  document.querySelector("#cform [name=productId]").onchange = fillCost;
+  fillCost();
   document.getElementById("cform").onsubmit = async (e) => {
     e.preventDefault();
     const unlock = lockSubmit(e.target);
@@ -481,24 +489,51 @@ function temuCell(p) {
   return `<a href="${esc(url)}" target="_blank" rel="noreferrer">Abrir Temu</a>`;
 }
 
-function openTemuModal(product) {
-  openSheet(`<h2>Temu — ${esc(product.name)}</h2>
-    <form id="tform" class="stack">
+function round4(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "";
+  return String(Math.round(x * 10000) / 10000);
+}
+
+function openRestockModal(product) {
+  const buy = unitBuyCost(product);
+  openSheet(`<h2>Editar compra — ${esc(product.name)}</h2>
+    <p class="empty">Corrige nombre, link, stock o el costo de reposición. El costo por unidad es el precio de compra dividido entre las unidades.</p>
+    <form id="rform" class="stack">
+      <label>Nombre <input name="name" required value="${esc(product.name || "")}"></label>
       <label>Link de Temu <input name="temuUrl" type="text" value="${esc(product.temuUrl || "")}" placeholder="https://"></label>
-      <label>Precio en Temu <input name="listPriceRemote" type="number" min="0" step="0.0001" value="${esc(product.listPriceRemote || "")}"></label>
-      <button type="submit">Guardar</button>
+      <label>Precio de compra (Temu) <input name="listPriceRemote" type="number" min="0" step="0.0001" value="${esc(product.listPriceRemote || "")}"></label>
+      <label>Unidades de esa compra <input name="remotePackQty" type="number" min="1" step="1" value="${esc(product.remotePackQty || 1)}"></label>
+      <p class="empty" id="unit-buy">Costo por unidad: ${buy ? unitMoney(buy) : "—"}</p>
+      <label>Stock actual <input name="stockQty" type="number" min="0" step="1" required value="${esc(product.stockQty ?? 0)}"></label>
+      <button type="submit">Guardar cambios</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
-  document.getElementById("tform").onsubmit = async (e) => {
+  const form = document.getElementById("rform");
+  const refreshUnit = () => {
+    const price = Number(form.listPriceRemote.value);
+    const units = Number(form.remotePackQty.value);
+    const cost = units > 0 && price > 0 ? price / units : 0;
+    document.getElementById("unit-buy").textContent = `Costo por unidad: ${cost ? unitMoney(cost) : "—"}`;
+  };
+  form.listPriceRemote.addEventListener("input", refreshUnit);
+  form.remotePackQty.addEventListener("input", refreshUnit);
+  form.onsubmit = async (e) => {
     e.preventDefault();
-    const unlock = lockSubmit(e.target);
+    const unlock = lockSubmit(form);
     if (!unlock) return;
-    const fd = new FormData(e.target);
+    const fd = new FormData(form);
+    const price = Number(fd.get("listPriceRemote") || 0);
+    const units = Math.max(1, Math.floor(Number(fd.get("remotePackQty") || 1)));
     try {
       await store.saveProduct({
         ...product,
+        name: fd.get("name"),
         temuUrl: fd.get("temuUrl"),
-        listPriceRemote: fd.get("listPriceRemote"),
+        listPriceRemote: price,
+        remotePackQty: units,
+        stockQty: fd.get("stockQty"),
+        avgUnitCost: units > 0 && price > 0 ? price / units : product.avgUnitCost,
       });
       await afterSave();
     } catch (err) {
@@ -515,38 +550,53 @@ async function renderPurchases(el) {
   const live = products.filter((p) => !p.archivedAt);
   el.innerHTML = `
     <h1>Posibles compras</h1>
-    <p class="empty">Productos que pueden volver a pedirse. Aquí va el link y el precio de Temu, y el stock que hay ahora.</p>
+    <p class="empty">Productos que pueden volver a pedirse. Edita nombre, stock, link y el costo (precio de compra ÷ unidades). Clic en la fila o en Editar.</p>
     <div class="toolbar"><button type="button" id="new-buy">Entrar stock</button></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Producto</th><th>Stock</th><th>Precio Temu</th><th>Link</th><th></th></tr></thead>
+      <thead><tr><th>Producto</th><th>Stock</th><th>Precio compra</th><th>Unid.</th><th>Costo/u</th><th>Link</th><th></th></tr></thead>
       <tbody>
         ${
           live.length
             ? live
-                .map(
-                  (p) => `<tr>
+                .map((p) => {
+                  const buy = unitBuyCost(p);
+                  return `<tr class="clickable" data-id="${esc(p.id)}">
                     <td>${esc(p.name)}</td>
                     <td>${p.stockQty}</td>
                     <td>${p.listPriceRemote ? unitMoney(p.listPriceRemote) : "—"}</td>
+                    <td>${esc(p.remotePackQty || 1)}</td>
+                    <td>${buy ? unitMoney(buy) : "—"}</td>
                     <td>${temuCell(p)}</td>
                     <td class="actions">
-                      <button type="button" class="ghost temu" data-id="${esc(p.id)}">Temu</button>
+                      <button type="button" class="ghost edit-buy" data-id="${esc(p.id)}">Editar</button>
                       <button type="button" class="ghost stock" data-id="${esc(p.id)}">Entrar stock</button>
                       <button type="button" class="ghost wipe" data-id="${esc(p.id)}">Vaciar</button>
                     </td>
-                  </tr>`,
-                )
+                  </tr>`;
+                })
                 .join("")
-            : `<tr><td colspan="5">Sin productos para reponer.</td></tr>`
+            : `<tr><td colspan="7">Sin productos para reponer.</td></tr>`
         }
       </tbody>
     </table></div>
     <h2>Historial de entradas</h2>
     ${tablePurchases(purchases, products)}`;
   el.querySelector("#new-buy").onclick = () => openPurchaseModal(live);
-  el.querySelectorAll("button.temu").forEach((btn) => {
-    const p = live.find((x) => x.id === btn.dataset.id);
-    if (p) btn.onclick = () => openTemuModal(p);
+  const openEdit = (id) => {
+    const p = live.find((x) => x.id === id);
+    if (p) openRestockModal(p);
+  };
+  el.querySelectorAll("tr.clickable").forEach((tr) => {
+    tr.onclick = (e) => {
+      if (e.target.closest("button, a")) return;
+      openEdit(tr.dataset.id);
+    };
+  });
+  el.querySelectorAll("button.edit-buy").forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openEdit(btn.dataset.id);
+    };
   });
   el.querySelectorAll("button.stock").forEach((btn) => {
     btn.onclick = () => openPurchaseModal(live, btn.dataset.id);

@@ -12,6 +12,7 @@ function mapProduct(row, images = []) {
     categoryName: row.categories?.name || "Sin categoría",
     temuUrl: row.temu_url,
     listPriceRemote: Number(row.list_price_remote || 0),
+    remotePackQty: Math.max(1, Number(row.remote_pack_qty || 1)),
     unitSalePrice: Number(row.unit_sale_price || 0),
     sellMode: row.sell_mode || "unit",
     packQty: Number(row.pack_qty || 1),
@@ -126,6 +127,9 @@ export function createSupabaseStore() {
       };
       if (input.temuUrl !== undefined) payload.temu_url = input.temuUrl || "";
       if (input.listPriceRemote !== undefined) payload.list_price_remote = input.listPriceRemote || 0;
+      if (input.remotePackQty !== undefined) payload.remote_pack_qty = Math.max(1, Math.floor(Number(input.remotePackQty || 1)));
+      if (input.stockQty !== undefined) payload.stock_qty = Math.max(0, Math.floor(Number(input.stockQty || 0)));
+      if (input.avgUnitCost !== undefined) payload.avg_unit_cost = Math.max(0, Number(input.avgUnitCost || 0));
       let row;
       if (input.id) {
         const { data, error } = await sb.from("products").update(payload).eq("id", input.id).select().single();

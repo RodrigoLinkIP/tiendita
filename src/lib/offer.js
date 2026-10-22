@@ -15,6 +15,14 @@ export function publicPriceLabel(product) {
   return money(product.unitSalePrice);
 }
 
+/** Costo de compra por unidad: precio Temu ÷ unidades de esa compra. */
+export function unitBuyCost(product) {
+  const units = Number(product.remotePackQty || 0);
+  const price = Number(product.listPriceRemote || 0);
+  if (!(units > 0) || !Number.isFinite(price) || price <= 0) return 0;
+  return price / units;
+}
+
 export function availabilityLabel(product) {
   if (!product.available) return "Agotado";
   if (product.availabilityDisplay === "subject") return "Sujeto a disponibilidad";
