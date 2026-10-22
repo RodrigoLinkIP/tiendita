@@ -243,7 +243,7 @@ button.ghost, .btn.ghost {
 }
 .dots span.on { background: var(--coral); }
 .product-sheet {
-  max-width: 28rem;
+  max-width: 30rem;
   padding: 0 0 1.25rem;
   display: grid;
   gap: 0;
@@ -256,7 +256,13 @@ button.ghost, .btn.ghost {
 .product-sheet .carousel-frame,
 .product-sheet .carousel .carousel-frame img {
   border-radius: 0;
-  height: 18.5rem;
+  height: 20.5rem;
+  background: #efe3d4;
+}
+.product-sheet .carousel-frame img,
+.product-sheet .carousel .carousel-frame img {
+  object-fit: contain;
+  object-position: center;
 }
 .product-copy {
   padding: 1.25rem 1.35rem 0.4rem;
