@@ -7,7 +7,7 @@ import {
 } from "../src/lib/inventory.js";
 import { lineCost } from "../src/lib/money.js";
 import { whatsappLink } from "../src/lib/whatsapp.js";
-import { publicPriceLabel, impliedUnitPrice, availabilityLabel } from "../src/lib/offer.js";
+import { publicPriceLabel, impliedUnitPrice, availabilityLabel, unitBuyCost } from "../src/lib/offer.js";
 import { applyWriteOff } from "../src/lib/inventory.js";
 
 function product(partial) {
@@ -158,6 +158,11 @@ describe("oferta pública", () => {
     expect(publicPriceLabel(p)).toMatch(/2 por \$0,25/);
     expect(impliedUnitPrice(p)).toBeCloseTo(0.125);
     expect(availabilityLabel(p)).toBe("Sujeto a disponibilidad");
+  });
+
+  it("divide el precio de compra entre las unidades", () => {
+    expect(unitBuyCost({ listPriceRemote: 2, remotePackQty: 50 })).toBeCloseTo(0.04);
+    expect(unitBuyCost({ listPriceRemote: 0, remotePackQty: 10 })).toBe(0);
   });
 
   it("vacía inventario sin borrar el producto", () => {
