@@ -1,5 +1,5 @@
 import { getStore, fictionalCatalog } from "./lib/store.js";
-import { money, unitMoney } from "./lib/money.js";
+import { publicPriceLabel, availabilityLabel } from "./lib/offer.js";
 import { whatsappLink } from "./lib/whatsapp.js";
 
 const store = getStore();
@@ -9,7 +9,7 @@ const modal = document.getElementById("modal");
 
 let products = [];
 let categories = [];
-let phone = "";
+let phones = [];
 let active = "all";
 
 async function boot() {
@@ -19,7 +19,7 @@ async function boot() {
     }
     categories = await store.listCategories();
     products = await store.listPublishedProducts();
-    phone = await store.getWhatsappPhone();
+    phones = store.getWhatsappPhones ? await store.getWhatsappPhones() : [{ label: "WhatsApp", phone: await store.getWhatsappPhone() }];
     renderFilters();
     renderGrid();
   } catch (err) {
@@ -61,11 +61,15 @@ function renderGrid() {
       <article class="card" data-id="${p.id}">
         <div class="photo">${p.imageUrl ? `<img src="${p.imageUrl}" alt="">` : "Sin foto"}</div>
         <div class="card-body">
-          <div class="kicker">${p.categoryName}</div>
-          <h2>${escapeHtml(p.name)}</h2>
-          <div class="price">${unitMoney(p.unitSalePrice)}</div>
-          <div class="stock ${p.available ? "" : "out"}">${p.available ? `${p.stockQty} disponibles` : "Agotado"}</div>
-          <button data-open="${p.id}">Ver y consultar</button>
+          <div class="card-top">
+            <div class="kicker">${p.categoryName}</div>
+            <h2>${escapeHtml(p.name)}</h2>
+          </div>
+          <div class="card-foot">
+            <div class="price">${publicPriceLabel(p)}</div>
+            <div class="stock ${p.available ? "" : "out"}">${availabilityLabel(p)}</div>
+            <button data-open="${p.id}">Consultar</button>
+          </div>
         </div>
       </article>`,
     )
@@ -78,17 +82,24 @@ function renderGrid() {
 function openProduct(id) {
   const p = products.find((x) => x.id === id);
   if (!p) return;
-  const text = `Hola, me interesa: ${p.name} (${unitMoney(p.unitSalePrice)})`;
-  const wa = whatsappLink(phone, text);
+  const offer = publicPriceLabel(p);
+  const text = `Hola, me interesa: ${p.name} (${offer})`;
+  const links = phones.filter((x) => x.phone);
   modal.classList.add("open");
   modal.innerHTML = `
     <div class="sheet">
       <div class="kicker">${p.categoryName}</div>
       <h2>${escapeHtml(p.name)}</h2>
       <p>${escapeHtml(p.description || "Sin descripción")}</p>
-      <p class="price">${unitMoney(p.unitSalePrice)}</p>
-      <p class="stock ${p.available ? "" : "out"}">${p.available ? `${p.stockQty} disponibles` : "Agotado"}</p>
-      ${wa ? `<a class="btn" target="_blank" rel="noreferrer" href="${wa}">WhatsApp</a>` : `<p class="empty">WhatsApp aún no configurado.</p>`}
+      <p class="price">${offer}</p>
+      <p class="stock ${p.available ? "" : "out"}">${availabilityLabel(p)}</p>
+      ${
+        links.length
+          ? `<div class="wa-list">${links
+              .map((x) => `<a class="btn" target="_blank" rel="noreferrer" href="${whatsappLink(x.phone, text)}">WhatsApp ${escapeHtml(x.label)}</a>`)
+              .join("")}</div>`
+          : `<p class="empty">WhatsApp aún no configurado.</p>`
+      }
       <p><button class="ghost" type="button" id="close-modal">Cerrar</button></p>
     </div>`;
   document.getElementById("close-modal").onclick = () => modal.classList.remove("open");
@@ -105,5 +116,4 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;");
 }
 
-void money;
 boot();

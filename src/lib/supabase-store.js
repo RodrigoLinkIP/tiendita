@@ -1,4 +1,5 @@
 import { getSupabase } from "./supabase-client.js";
+import { impliedUnitPrice, normalizePhones } from "./offer.js";
 
 function mapProduct(row, images = []) {
   const image = (images || []).sort((a, b) => a.sort_order - b.sort_order)[0];
@@ -11,6 +12,11 @@ function mapProduct(row, images = []) {
     temuUrl: row.temu_url,
     listPriceRemote: Number(row.list_price_remote || 0),
     unitSalePrice: Number(row.unit_sale_price || 0),
+    sellMode: row.sell_mode || "unit",
+    packQty: Number(row.pack_qty || 1),
+    packPrice: Number(row.pack_price || 0),
+    availabilityDisplay: row.availability_display || "count",
+    archivedAt: row.archived_at || null,
     stockQty: row.stock_qty,
     avgUnitCost: Number(row.avg_unit_cost || 0),
     isPublished: row.is_published,
@@ -72,17 +78,26 @@ export function createSupabaseStore() {
         .from("products")
         .select("*, categories(name), product_images(public_url, sort_order)")
         .eq("is_published", true)
+        .is("archived_at", null)
         .order("name");
       if (error) throw error;
       return data.map((row) => mapProduct(row, row.product_images));
     },
 
-    async getWhatsappPhone() {
+    async getWhatsappPhones() {
       const envPhone = import.meta.env.VITE_WHATSAPP_PHONE || "";
-      const { data, error } = await sb.from("app_settings").select("value").eq("key", "whatsapp_phone").maybeSingle();
-      if (error) return envPhone;
-      const fromDb = data?.value?.phone || "";
-      return String(fromDb || envPhone).replace(/\D/g, "");
+      const { data, error } = await sb.from("app_settings").select("key, value").in("key", ["whatsapp_phones", "whatsapp_phone"]);
+      if (error) return normalizePhones([], envPhone);
+      const multi = data?.find((r) => r.key === "whatsapp_phones")?.value;
+      const one = data?.find((r) => r.key === "whatsapp_phone")?.value?.phone;
+      if (Array.isArray(multi?.phones)) return normalizePhones(multi.phones, envPhone);
+      if (Array.isArray(multi)) return normalizePhones(multi, envPhone);
+      return normalizePhones([], one || envPhone);
+    },
+
+    async getWhatsappPhone() {
+      const phones = await this.getWhatsappPhones();
+      return phones.find((p) => p.phone)?.phone || "";
     },
 
     async listAllProducts() {
@@ -101,8 +116,13 @@ export function createSupabaseStore() {
         category_id: input.categoryId || null,
         temu_url: input.temuUrl || "",
         list_price_remote: input.listPriceRemote || 0,
-        unit_sale_price: input.unitSalePrice || 0,
+        unit_sale_price: input.sellMode === "pack" ? impliedUnitPrice(input) : input.unitSalePrice || 0,
+        sell_mode: input.sellMode === "pack" ? "pack" : "unit",
+        pack_qty: Number(input.packQty || 1),
+        pack_price: Number(input.packPrice || 0),
+        availability_display: input.availabilityDisplay === "subject" ? "subject" : "count",
         is_published: Boolean(input.isPublished),
+        archived_at: input.archivedAt || null,
       };
       let row;
       if (input.id) {
@@ -198,10 +218,25 @@ export function createSupabaseStore() {
       if (error) throw error;
     },
 
+    async setWhatsappPhones(phones) {
+      const rows = normalizePhones(phones);
+      const { error } = await sb.from("app_settings").upsert({ key: "whatsapp_phones", value: { phones: rows } });
+      if (error) throw error;
+      const first = rows.find((p) => p.phone)?.phone || "";
+      await sb.from("app_settings").upsert({ key: "whatsapp_phone", value: { phone: first } });
+    },
+
     async setWhatsappPhone(phone) {
-      const { error } = await sb
-        .from("app_settings")
-        .upsert({ key: "whatsapp_phone", value: { phone: String(phone).replace(/\D/g, "") } });
+      await this.setWhatsappPhones([{ label: "WhatsApp", phone }]);
+    },
+
+    async writeOffStock(productId) {
+      const { error } = await sb.rpc("write_off_stock", { p_product_id: productId });
+      if (error) throw error;
+    },
+
+    async archiveProduct(productId) {
+      const { error } = await sb.rpc("archive_product", { p_product_id: productId });
       if (error) throw error;
     },
 

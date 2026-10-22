@@ -2,9 +2,11 @@ import { createId } from "./id.js";
 import {
   applyConfirmedPurchase,
   applyConfirmedSale,
+  applyWriteOff,
   STATUS,
   summarizeFinance,
 } from "./inventory.js";
+import { impliedUnitPrice, normalizePhones } from "./offer.js";
 
 const KEY = "venta-loca-local-v1";
 
@@ -25,7 +27,10 @@ function emptyState() {
     sales: [],
     expenses: [],
     movements: [],
-    settings: { whatsappPhone: import.meta.env?.VITE_WHATSAPP_PHONE || "" },
+    settings: {
+      whatsappPhone: import.meta.env?.VITE_WHATSAPP_PHONE || "",
+      whatsappPhones: normalizePhones([], import.meta.env?.VITE_WHATSAPP_PHONE || ""),
+    },
     session: null,
   };
 }
@@ -86,7 +91,7 @@ export function createLocalStore() {
     async listPublishedProducts() {
       const state = load();
       return state.products
-        .filter((p) => p.isPublished)
+        .filter((p) => p.isPublished && !p.archivedAt)
         .map((p) => hydrateProduct(p, state));
     },
 
@@ -94,8 +99,14 @@ export function createLocalStore() {
       return load().categories;
     },
 
+    async getWhatsappPhones() {
+      const s = load().settings;
+      return normalizePhones(s.whatsappPhones, s.whatsappPhone);
+    },
+
     async getWhatsappPhone() {
-      return load().settings.whatsappPhone || "";
+      const phones = await this.getWhatsappPhones();
+      return phones.find((p) => p.phone)?.phone || "";
     },
 
     async listAllProducts() {
@@ -115,10 +126,16 @@ export function createLocalStore() {
           categoryId: input.categoryId || null,
           temuUrl: input.temuUrl || "",
           listPriceRemote: Number(input.listPriceRemote || 0),
-          unitSalePrice: Number(input.unitSalePrice || 0),
+          sellMode: input.sellMode === "pack" ? "pack" : "unit",
+          packQty: Number(input.packQty || 1),
+          packPrice: Number(input.packPrice || 0),
+          unitSalePrice:
+            input.sellMode === "pack" ? impliedUnitPrice(input) : Number(input.unitSalePrice || 0),
+          availabilityDisplay: input.availabilityDisplay === "subject" ? "subject" : "count",
           stockQty: existing?.stockQty ?? 0,
           avgUnitCost: existing?.avgUnitCost ?? 0,
           isPublished: Boolean(input.isPublished),
+          archivedAt: existing?.archivedAt || null,
         };
         state.products = existing
           ? state.products.map((p) => (p.id === id ? product : p))
@@ -250,10 +267,42 @@ export function createLocalStore() {
       });
     },
 
-    async setWhatsappPhone(phone) {
+    async setWhatsappPhones(phones) {
       const state = load();
-      state.settings.whatsappPhone = String(phone || "").replace(/\D/g, "");
+      state.settings.whatsappPhones = normalizePhones(phones);
+      state.settings.whatsappPhone = state.settings.whatsappPhones.find((p) => p.phone)?.phone || "";
       save(state);
+    },
+
+    async setWhatsappPhone(phone) {
+      await this.setWhatsappPhones([{ label: "WhatsApp", phone }]);
+    },
+
+    async writeOffStock(productId) {
+      return serial(async () => {
+        const state = load();
+        const product = state.products.find((p) => p.id === productId);
+        if (!product) throw new Error("Producto inexistente");
+        const { movement } = applyWriteOff({
+          product,
+          actorId: state.session?.userId || "local",
+          occurredAt: new Date().toISOString(),
+        });
+        if (movement) state.movements.push(movement);
+        save(state);
+      });
+    },
+
+    async archiveProduct(productId) {
+      await this.writeOffStock(productId);
+      return serial(async () => {
+        const state = load();
+        const product = state.products.find((p) => p.id === productId);
+        if (!product) throw new Error("Producto inexistente");
+        product.isPublished = false;
+        product.archivedAt = new Date().toISOString();
+        save(state);
+      });
     },
 
     async listPurchases() {
@@ -311,6 +360,10 @@ export function fictionalCatalog() {
         temuUrl: "",
         listPriceRemote: 2.0,
         unitSalePrice: 0.15,
+        sellMode: "pack",
+        packQty: 2,
+        packPrice: 0.3,
+        availabilityDisplay: "subject",
         stockQty: 10,
         avgUnitCost: 0.04,
         isPublished: true,
@@ -323,6 +376,10 @@ export function fictionalCatalog() {
         temuUrl: "",
         listPriceRemote: 3.0,
         unitSalePrice: 1.5,
+        sellMode: "unit",
+        packQty: 1,
+        packPrice: 0,
+        availabilityDisplay: "count",
         stockQty: 0,
         avgUnitCost: 0.5,
         isPublished: true,

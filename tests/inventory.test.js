@@ -7,6 +7,8 @@ import {
 } from "../src/lib/inventory.js";
 import { lineCost } from "../src/lib/money.js";
 import { whatsappLink } from "../src/lib/whatsapp.js";
+import { publicPriceLabel, impliedUnitPrice, availabilityLabel } from "../src/lib/offer.js";
+import { applyWriteOff } from "../src/lib/inventory.js";
 
 function product(partial) {
   return {
@@ -147,5 +149,21 @@ describe("whatsapp", () => {
       "https://wa.me/50377778888?text=hola",
     );
     expect(whatsappLink("", "hola")).toBeNull();
+  });
+});
+
+describe("oferta pública", () => {
+  it("muestra paquete, no el unitario interno", () => {
+    const p = { sellMode: "pack", packQty: 2, packPrice: 0.25, unitSalePrice: 0.125, stockQty: 50, available: true, availabilityDisplay: "subject" };
+    expect(publicPriceLabel(p)).toMatch(/2 por/);
+    expect(impliedUnitPrice(p)).toBeCloseTo(0.125);
+    expect(availabilityLabel(p)).toBe("Sujeto a disponibilidad");
+  });
+
+  it("vacía inventario sin borrar el producto", () => {
+    const product = { id: "p1", stockQty: 8, avgUnitCost: 0.2 };
+    const { movement } = applyWriteOff({ product, actorId: "a", occurredAt: "t" });
+    expect(product.stockQty).toBe(0);
+    expect(movement.qty).toBe(-8);
   });
 });

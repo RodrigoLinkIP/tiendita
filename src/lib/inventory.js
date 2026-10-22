@@ -110,6 +110,28 @@ export function applyConfirmedSale({ sale, productsById, actorId, occurredAt }) 
   return { sale, productsById, movements };
 }
 
+/** Saca el stock restante (merma / producto que no se repondrá). No toca el historial de compras. */
+export function applyWriteOff({ product, actorId, occurredAt, reason = "write_off" }) {
+  const qty = Number(product.stockQty);
+  if (!Number.isInteger(qty) || qty < 0) throw new Error("Stock inválido");
+  if (qty === 0) return { product, movement: null };
+  const unitCost = Number(product.avgUnitCost);
+  product.stockQty = 0;
+  return {
+    product,
+    movement: {
+      productId: product.id,
+      movementType: "adjustment_out",
+      qty: -qty,
+      unitCost,
+      referenceType: reason,
+      referenceId: product.id,
+      occurredAt,
+      createdBy: actorId,
+    },
+  };
+}
+
 export function summarizeFinance({
   contributions = [],
   purchases = [],

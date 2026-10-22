@@ -1,5 +1,6 @@
 import { getStore, fictionalCatalog } from "./lib/store.js";
 import { money, unitMoney } from "./lib/money.js";
+import { impliedUnitPrice, publicPriceLabel, availabilityLabel } from "./lib/offer.js";
 
 const store = getStore();
 const app = document.getElementById("app");
@@ -177,6 +178,7 @@ function kpi(label, value) {
 }
 
 function productForm(categories, p = {}) {
+  const pack = p.sellMode === "pack";
   return `<form id="pform" class="stack">
     <input type="hidden" name="id" value="${esc(p.id || "")}">
     <label>Nombre <input name="name" required value="${esc(p.name || "")}"></label>
@@ -186,7 +188,23 @@ function productForm(categories, p = {}) {
       .join("")}</select></label>
     <label>Link Temu <input name="temuUrl" value="${esc(p.temuUrl || "")}"></label>
     <label>Precio real Temu (informativo) <input name="listPriceRemote" type="number" step="0.01" value="${esc(p.listPriceRemote ?? 0)}"></label>
-    <label>Precio venta unidad <input name="unitSalePrice" type="number" step="0.0001" required value="${esc(p.unitSalePrice ?? "")}"></label>
+    <label>Cómo se vende
+      <select name="sellMode">
+        <option value="pack" ${pack ? "selected" : ""}>Por paquete (ej. 2 por 0.25)</option>
+        <option value="unit" ${pack ? "" : "selected"}>Por unidad</option>
+      </select>
+    </label>
+    <label class="pack-only">Unidades por paquete <input name="packQty" type="number" min="2" step="1" value="${esc(p.packQty || 2)}"></label>
+    <label class="pack-only">Precio del paquete <input name="packPrice" type="number" min="0" step="0.0001" value="${esc(p.packPrice || "")}"></label>
+    <label class="unit-only">Precio por unidad <input name="unitSalePrice" type="number" min="0" step="0.0001" value="${esc(p.unitSalePrice ?? "")}"></label>
+    <label>Disponibilidad en el catálogo
+      <select name="availabilityDisplay">
+        <option value="subject" ${p.availabilityDisplay === "subject" ? "selected" : ""}>Sujeto a disponibilidad</option>
+        <option value="count" ${p.availabilityDisplay !== "subject" ? "selected" : ""}>Mostrar cuántos quedan</option>
+      </select>
+    </label>
+    <p class="empty">URL de foto (modo local): pega un enlace de internet solo para probar en tu computadora, sin subir archivos. En la tienda real no hace falta.<br>
+    Foto (Supabase Storage): sube el archivo desde el teléfono o la PC. Queda guardado en el proyecto y es lo que ve el público.</p>
     <label>URL de foto (modo local) <input name="imageUrl" value="${esc(p.imageUrl || "")}"></label>
     <label>Foto (Supabase Storage) <input name="imageFile" type="file" accept="image/*"></label>
     <label class="check"><input type="checkbox" name="isPublished" ${p.isPublished ? "checked" : ""}> Publicado en catálogo</label>
@@ -195,24 +213,44 @@ function productForm(categories, p = {}) {
   </form>`;
 }
 
+function toggleSellFields(root = document) {
+  const mode = root.querySelector("[name=sellMode]")?.value;
+  root.querySelectorAll(".pack-only").forEach((el) => {
+    el.hidden = mode !== "pack";
+  });
+  root.querySelectorAll(".unit-only").forEach((el) => {
+    el.hidden = mode !== "unit";
+  });
+}
+
+function productPayload(fd) {
+  return {
+    id: fd.get("id") || undefined,
+    name: fd.get("name"),
+    description: fd.get("description"),
+    categoryId: fd.get("categoryId"),
+    temuUrl: fd.get("temuUrl"),
+    listPriceRemote: fd.get("listPriceRemote"),
+    sellMode: fd.get("sellMode"),
+    packQty: fd.get("packQty"),
+    packPrice: fd.get("packPrice"),
+    unitSalePrice: fd.get("unitSalePrice"),
+    availabilityDisplay: fd.get("availabilityDisplay"),
+    imageUrl: fd.get("imageUrl"),
+    imageFile: fd.get("imageFile")?.size ? fd.get("imageFile") : null,
+    isPublished: fd.get("isPublished") === "on",
+  };
+}
+
 function bindProductForm(categoriesLookup) {
+  toggleSellFields();
+  document.querySelector("#pform [name=sellMode]")?.addEventListener("change", () => toggleSellFields());
   document.getElementById("pform").onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const errBox = document.getElementById("ferr");
     try {
-      await store.saveProduct({
-        id: fd.get("id") || undefined,
-        name: fd.get("name"),
-        description: fd.get("description"),
-        categoryId: fd.get("categoryId"),
-        temuUrl: fd.get("temuUrl"),
-        listPriceRemote: fd.get("listPriceRemote"),
-        unitSalePrice: fd.get("unitSalePrice"),
-        imageUrl: fd.get("imageUrl"),
-        imageFile: fd.get("imageFile")?.size ? fd.get("imageFile") : null,
-        isPublished: fd.get("isPublished") === "on",
-      });
+      await store.saveProduct(productPayload(fd));
       await afterSave();
     } catch (err) {
       errBox.hidden = false;
@@ -233,20 +271,25 @@ async function renderProducts(el) {
       <button type="button" class="secondary" id="new-sale">Registrar venta</button>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Nombre</th><th>Categoría</th><th>Stock</th><th>Costo prom.</th><th>Precio</th><th>Público</th><th></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Categoría</th><th>Stock</th><th>Costo prom.</th><th>Se vende</th><th>Público</th><th></th></tr></thead>
       <tbody>
         ${
-          products.length
+          products.filter((p) => !p.archivedAt).length
             ? products
+                .filter((p) => !p.archivedAt)
                 .map(
                   (p) => `<tr class="clickable" data-id="${esc(p.id)}">
                     <td>${esc(p.name)}</td>
                     <td>${esc(p.categoryName || "")}</td>
                     <td>${p.stockQty}</td>
                     <td>${unitMoney(p.avgUnitCost)}</td>
-                    <td>${unitMoney(p.unitSalePrice)}</td>
+                    <td>${esc(publicPriceLabel(p))}<br><span class="kicker">${esc(availabilityLabel({ ...p, available: p.stockQty > 0 }))}</span></td>
                     <td>${p.isPublished ? "sí" : "no"}</td>
-                    <td class="actions"><button type="button" class="ghost edit" data-id="${esc(p.id)}">Editar</button></td>
+                    <td class="actions">
+                      <button type="button" class="ghost edit" data-id="${esc(p.id)}">Editar</button>
+                      <button type="button" class="ghost wipe" data-id="${esc(p.id)}">Vaciar stock</button>
+                      <button type="button" class="ghost drop" data-id="${esc(p.id)}">Eliminar</button>
+                    </td>
                   </tr>`,
                 )
                 .join("")
@@ -259,6 +302,8 @@ async function renderProducts(el) {
     const p = products.find((x) => x.id === id) || {};
     openSheet(`<h2>${id ? "Editar producto" : "Nuevo producto"}</h2>${productForm(categories, p)}`);
     bindProductForm();
+    toggleSellFields();
+    document.querySelector("[name=sellMode]").onchange = () => toggleSellFields();
   };
 
   el.querySelector("#new-p").onclick = () => openProduct("");
@@ -276,30 +321,78 @@ async function renderProducts(el) {
       openProduct(btn.dataset.id);
     };
   });
+  el.querySelectorAll("button.wipe").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm("¿Sacar todo el inventario de este producto? El historial de compras se conserva.")) return;
+      await store.writeOffStock(btn.dataset.id);
+      await render();
+    };
+  });
+  el.querySelectorAll("button.drop").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm("¿Eliminarlo del catálogo y vaciar el stock? No se podrá restockear este mismo renglón; las compras/ventas pasadas quedan en el historial.")) return;
+      await store.archiveProduct(btn.dataset.id);
+      await render();
+    };
+  });
 }
 
 function openPurchaseModal(products) {
+  const live = products.filter((p) => !p.archivedAt);
   openSheet(`<h2>Registrar compra</h2>
-    <p class="empty">Confirmar entra stock y actualiza el costo promedio. No es un gasto operativo.</p>
+    <p class="empty">Entra stock al costo. Debajo defines cómo se ofrecerá al público: paquete (2 por 0.25) o unidad con el precio que ustedes elijan.</p>
     <form id="cform" class="stack">
       <label>Fecha <input name="purchasedOn" type="date" value="${today()}" required></label>
       <label>Notas <input name="notes"></label>
-      <label>Producto <select name="productId">${products.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select></label>
-      <label>Cantidad <input name="qty" type="number" min="1" step="1" required></label>
-      <label>Costo unitario <input name="unitCost" type="number" min="0" step="0.0001" required></label>
+      <label>Producto <select name="productId">${live.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select></label>
+      <label>Cantidad que llegó (unidades) <input name="qty" type="number" min="1" step="1" required></label>
+      <label>Costo unitario de compra <input name="unitCost" type="number" min="0" step="0.0001" required></label>
+      <label>Cómo se venderá
+        <select name="sellMode">
+          <option value="pack">Por paquete</option>
+          <option value="unit">Por unidad</option>
+        </select>
+      </label>
+      <label class="pack-only">Unidades por paquete <input name="packQty" type="number" min="2" step="1" value="2"></label>
+      <label class="pack-only">Precio del paquete <input name="packPrice" type="number" min="0" step="0.0001" value="0.25"></label>
+      <label class="unit-only">Precio de venta por unidad <input name="unitSalePrice" type="number" min="0" step="0.0001"></label>
       <button type="submit">Confirmar compra</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
+  const fillSell = () => {
+    const p = live.find((x) => x.id === document.querySelector("#cform [name=productId]").value);
+    if (!p) return;
+    const form = document.getElementById("cform");
+    form.sellMode.value = p.sellMode || "unit";
+    form.packQty.value = p.packQty || 2;
+    form.packPrice.value = p.packPrice || "";
+    form.unitSalePrice.value = p.unitSalePrice || "";
+    toggleSellFields(form);
+  };
+  document.querySelector("#cform [name=productId]").onchange = fillSell;
+  document.querySelector("#cform [name=sellMode]").onchange = () => toggleSellFields(document.getElementById("cform"));
+  fillSell();
   document.getElementById("cform").onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     try {
+      const product = live.find((x) => x.id === fd.get("productId"));
       const draft = await store.createPurchaseDraft({
         purchasedOn: fd.get("purchasedOn"),
         notes: fd.get("notes"),
         lines: [{ productId: fd.get("productId"), qty: fd.get("qty"), unitCost: fd.get("unitCost") }],
       });
       await store.confirmPurchase(draft.id);
+      await store.saveProduct({
+        ...product,
+        sellMode: fd.get("sellMode"),
+        packQty: fd.get("packQty"),
+        packPrice: fd.get("packPrice"),
+        unitSalePrice: fd.get("unitSalePrice"),
+        isPublished: product.isPublished,
+      });
       await afterSave();
     } catch (err) {
       const box = document.getElementById("ferr");
@@ -310,33 +403,56 @@ function openPurchaseModal(products) {
 }
 
 function openSaleModal(products) {
+  const live = products.filter((p) => !p.archivedAt);
   openSheet(`<h2>Registrar venta</h2>
-    <p class="empty">Al confirmar se descuenta stock y se congelan precio y costo de ese momento.</p>
+    <p class="empty">Si se vende por paquete, se descuenta el paquete completo. Si es por unidad, eliges el precio de esa venta.</p>
     <form id="sform" class="stack">
       <label>Fecha <input name="soldOn" type="date" value="${today()}" required></label>
       <label>Notas <input name="notes"></label>
-      <label>Producto <select name="productId">${products.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${p.stockQty})</option>`).join("")}</select></label>
-      <label>Cantidad <input name="qty" type="number" min="1" step="1" required></label>
-      <label>Precio unitario <input name="unitPrice" type="number" min="0" step="0.0001" required></label>
+      <label>Producto <select name="productId">${live.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${p.stockQty})</option>`).join("")}</select></label>
+      <p id="offer-hint" class="empty"></p>
+      <label class="pack-only">Paquetes vendidos <input name="packs" type="number" min="1" step="1" value="1"></label>
+      <label class="unit-only">Unidades vendidas <input name="qty" type="number" min="1" step="1" value="1"></label>
+      <label class="unit-only">Precio cobrado por unidad <input name="unitPrice" type="number" min="0" step="0.0001" required></label>
       <button type="submit">Confirmar venta</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
-  const select = document.querySelector("#sform [name=productId]");
-  const price = document.querySelector("#sform [name=unitPrice]");
-  const fillPrice = () => {
-    const p = products.find((x) => x.id === select.value);
-    if (p) price.value = p.unitSalePrice;
+  const form = document.getElementById("sform");
+  const fill = () => {
+    const p = live.find((x) => x.id === form.productId.value);
+    if (!p) return;
+    form.sellHint = p.sellMode;
+    document.getElementById("offer-hint").textContent =
+      p.sellMode === "pack" ? `Oferta: ${publicPriceLabel(p)}` : "Venta por unidad: puedes poner el precio de esta venta.";
+    form.unitPrice.value = p.unitSalePrice;
+    form.querySelectorAll(".pack-only").forEach((el) => {
+      el.hidden = p.sellMode !== "pack";
+    });
+    form.querySelectorAll(".unit-only").forEach((el) => {
+      el.hidden = p.sellMode === "pack";
+    });
   };
-  fillPrice();
-  select.onchange = fillPrice;
-  document.getElementById("sform").onsubmit = async (e) => {
+  form.productId.onchange = fill;
+  fill();
+  form.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const p = live.find((x) => x.id === fd.get("productId"));
     try {
+      let qty;
+      let unitPrice;
+      if (p.sellMode === "pack") {
+        const packs = Number(fd.get("packs") || 1);
+        qty = packs * Number(p.packQty || 1);
+        unitPrice = impliedUnitPrice(p);
+      } else {
+        qty = fd.get("qty");
+        unitPrice = fd.get("unitPrice");
+      }
       const draft = await store.createSaleDraft({
         soldOn: fd.get("soldOn"),
         notes: fd.get("notes"),
-        lines: [{ productId: fd.get("productId"), qty: fd.get("qty"), unitPrice: fd.get("unitPrice") }],
+        lines: [{ productId: fd.get("productId"), qty, unitPrice }],
       });
       await store.confirmSale(draft.id);
       await afterSave();
@@ -468,12 +584,18 @@ async function renderKardex(el) {
 }
 
 async function renderSettings(el) {
-  const phone = await store.getWhatsappPhone();
+  const phones = store.getWhatsappPhones ? await store.getWhatsappPhones() : [{ label: "WhatsApp", phone: await store.getWhatsappPhone() }];
   const canPassword = Boolean(store.updatePassword) && store.mode !== "local";
   el.innerHTML = `
     <h1>Ajustes</h1>
+    <p class="empty">Tres números para el catálogo (Vero, Rodri y Sofi, u otros nombres). El cliente elige a quién escribir.</p>
     <form id="aform" class="stack">
-      <label>WhatsApp (código de país + número) <input name="phone" value="${esc(phone)}"></label>
+      ${[0, 1, 2]
+        .map(
+          (i) => `<label>Nombre ${i + 1} <input name="label${i}" value="${esc(phones[i]?.label || "")}"></label>
+        <label>WhatsApp ${i + 1} (código de país + número) <input name="phone${i}" value="${esc(phones[i]?.phone || "")}"></label>`,
+        )
+        .join("")}
       <button type="submit">Guardar WhatsApp</button>
       <p id="ok" class="empty"></p>
     </form>
@@ -489,7 +611,8 @@ async function renderSettings(el) {
     }`;
   el.querySelector("#aform").onsubmit = async (e) => {
     e.preventDefault();
-    await store.setWhatsappPhone(new FormData(e.target).get("phone"));
+    const fd = new FormData(e.target);
+    await store.setWhatsappPhones([0, 1, 2].map((i) => ({ label: fd.get(`label${i}`), phone: fd.get(`phone${i}`) })));
     document.getElementById("ok").textContent = "WhatsApp guardado.";
   };
   const pw = el.querySelector("#pwform");
