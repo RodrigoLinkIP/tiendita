@@ -15,12 +15,12 @@ export function publicPriceLabel(product) {
   return money(product.unitSalePrice);
 }
 
-/** Costo de compra por unidad: precio Temu ÷ unidades de esa compra. */
+/** Costo de una pieza: precio Temu de un producto ÷ unidades que trae ese producto. */
 export function unitBuyCost(product) {
-  const units = Number(product.remotePackQty || 0);
   const price = Number(product.listPriceRemote || 0);
-  if (!(units > 0) || !Number.isFinite(price) || price <= 0) return 0;
-  return price / units;
+  const inside = Number(product.remotePackQty || 0);
+  if (!(inside > 0) || !Number.isFinite(price) || price <= 0) return 0;
+  return price / inside;
 }
 
 export function availabilityLabel(product) {

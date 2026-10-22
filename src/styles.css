@@ -356,6 +356,11 @@ input, select, textarea {
   border-radius: 0.6rem;
   background: #fff;
 }
+input:read-only {
+  background: #f3eee6;
+  color: var(--ink);
+  cursor: default;
+}
 .chip { color: var(--ink); }
 .chip.active { background: var(--ink); color: #fff; }
 table { width: 100%; border-collapse: collapse; background: var(--card); }

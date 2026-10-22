@@ -160,8 +160,9 @@ describe("oferta pública", () => {
     expect(availabilityLabel(p)).toBe("Sujeto a disponibilidad");
   });
 
-  it("divide el precio de compra entre las unidades", () => {
+  it("divide el precio de un producto entre las unidades que trae", () => {
     expect(unitBuyCost({ listPriceRemote: 2, remotePackQty: 50 })).toBeCloseTo(0.04);
+    expect(unitBuyCost({ listPriceRemote: 3.89, remotePackQty: 7 })).toBeCloseTo(3.89 / 7);
     expect(unitBuyCost({ listPriceRemote: 0, remotePackQty: 10 })).toBe(0);
   });
 

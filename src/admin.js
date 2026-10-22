@@ -498,14 +498,14 @@ function round4(n) {
 function openRestockModal(product) {
   const buy = unitBuyCost(product);
   openSheet(`<h2>Editar compra — ${esc(product.name)}</h2>
-    <p class="empty">Corrige nombre, link, stock o el costo de reposición. El costo por unidad es el precio de compra dividido entre las unidades.</p>
+    <p class="empty">El costo por pieza es el precio de un producto en Temu dividido entre las unidades que trae ese producto (no entre cuántos productos hay en stock).</p>
     <form id="rform" class="stack">
       <label>Nombre <input name="name" required value="${esc(product.name || "")}"></label>
       <label>Link de Temu <input name="temuUrl" type="text" value="${esc(product.temuUrl || "")}" placeholder="https://"></label>
-      <label>Precio de compra (Temu) <input name="listPriceRemote" type="number" min="0" step="0.0001" value="${esc(product.listPriceRemote || "")}"></label>
-      <label>Unidades de esa compra <input name="remotePackQty" type="number" min="1" step="1" value="${esc(product.remotePackQty || 1)}"></label>
-      <p class="empty" id="unit-buy">Costo por unidad: ${buy ? unitMoney(buy) : "—"}</p>
-      <label>Stock actual <input name="stockQty" type="number" min="0" step="1" required value="${esc(product.stockQty ?? 0)}"></label>
+      <label>Precio de compra de un producto (Temu) <input name="listPriceRemote" type="number" min="0" step="0.0001" value="${esc(product.listPriceRemote || "")}"></label>
+      <label>Unidades que trae cada producto <input name="remotePackQty" type="number" min="1" step="1" value="${esc(product.remotePackQty || 1)}"></label>
+      <label>Costo por unidad <input id="unit-buy" type="text" readonly tabindex="-1" value="${buy ? unitMoney(buy) : "—"}"></label>
+      <label>Stock actual (piezas) <input name="stockQty" type="number" min="0" step="1" required value="${esc(product.stockQty ?? 0)}"></label>
       <button type="submit">Guardar cambios</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
@@ -514,7 +514,7 @@ function openRestockModal(product) {
     const price = Number(form.listPriceRemote.value);
     const units = Number(form.remotePackQty.value);
     const cost = units > 0 && price > 0 ? price / units : 0;
-    document.getElementById("unit-buy").textContent = `Costo por unidad: ${cost ? unitMoney(cost) : "—"}`;
+    document.getElementById("unit-buy").value = cost ? unitMoney(cost) : "—";
   };
   form.listPriceRemote.addEventListener("input", refreshUnit);
   form.remotePackQty.addEventListener("input", refreshUnit);
@@ -550,10 +550,10 @@ async function renderPurchases(el) {
   const live = products.filter((p) => !p.archivedAt);
   el.innerHTML = `
     <h1>Posibles compras</h1>
-    <p class="empty">Productos que pueden volver a pedirse. Edita nombre, stock, link y el costo (precio de compra ÷ unidades). Clic en la fila o en Editar.</p>
+    <p class="empty">Edita cada producto: el costo por unidad es precio de un producto ÷ unidades que trae. Clic en la fila o en Editar.</p>
     <div class="toolbar"><button type="button" id="new-buy">Entrar stock</button></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Producto</th><th>Stock</th><th>Precio compra</th><th>Unid.</th><th>Costo/u</th><th>Link</th><th></th></tr></thead>
+      <thead><tr><th>Producto</th><th>Stock</th><th>Precio compra</th><th>Trae</th><th>Costo/u</th><th>Link</th><th></th></tr></thead>
       <tbody>
         ${
           live.length
