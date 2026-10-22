@@ -24,13 +24,13 @@ export function fromUnitScaled(scaled) {
 export function money(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("es", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `$${n.toLocaleString("es", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function unitMoney(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("es", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return `$${n.toLocaleString("es", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
 
 export function lineCost(qty, unitCost) {
