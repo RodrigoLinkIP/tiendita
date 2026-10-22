@@ -79,38 +79,82 @@ function renderGrid() {
   });
 }
 
-function galleryHtml(p) {
+function productUrls(p) {
   const urls = (p.images || []).map((i) => i.url).filter(Boolean);
   if (!urls.length && p.imageUrl) urls.push(p.imageUrl);
-  if (!urls.length) return `<div class="carousel-frame">Sin foto</div>`;
+  return urls;
+}
+
+function galleryHtml(p) {
+  const urls = productUrls(p);
+  if (!urls.length) return `<div class="carousel-frame muted">Sin foto</div>`;
   if (urls.length === 1) {
     return `<div class="carousel-frame"><img src="${escapeHtml(urls[0])}" alt="${escapeHtml(p.name)}"></div>`;
   }
   return `<div class="carousel" data-count="${urls.length}">
-    <div class="carousel-frame"><img id="slide" src="${escapeHtml(urls[0])}" alt="${escapeHtml(p.name)}"></div>
-    <div class="carousel-nav">
-      <button type="button" class="ghost" id="prev">Anterior</button>
-      <div class="dots">${urls.map((_, i) => `<span class="${i === 0 ? "on" : ""}" data-i="${i}"></span>`).join("")}</div>
-      <button type="button" class="ghost" id="next">Siguiente</button>
+    <div class="carousel-frame" id="slides">
+      ${urls
+        .map(
+          (url, i) =>
+            `<img class="${i === 0 ? "on" : ""}" src="${escapeHtml(url)}" alt="${escapeHtml(p.name)} ${i + 1}">`,
+        )
+        .join("")}
     </div>
+    <button type="button" class="carousel-btn prev" id="prev" aria-label="Anterior">‹</button>
+    <button type="button" class="carousel-btn next" id="next" aria-label="Siguiente">›</button>
+    <div class="dots">${urls.map((_, i) => `<span class="${i === 0 ? "on" : ""}" data-i="${i}"></span>`).join("")}</div>
   </div>`;
 }
 
+let carouselTimer;
+
+function stopCarousel() {
+  if (carouselTimer) {
+    clearInterval(carouselTimer);
+    carouselTimer = null;
+  }
+}
+
 function bindCarousel(urls) {
+  stopCarousel();
   if (urls.length < 2) return;
   let i = 0;
-  const img = document.getElementById("slide");
+  const slides = [...document.querySelectorAll("#slides img")];
   const dots = [...document.querySelectorAll(".dots span")];
   const show = (n) => {
     i = (n + urls.length) % urls.length;
-    img.src = urls[i];
+    slides.forEach((img, idx) => img.classList.toggle("on", idx === i));
     dots.forEach((d, idx) => d.classList.toggle("on", idx === i));
   };
-  document.getElementById("prev").onclick = () => show(i - 1);
-  document.getElementById("next").onclick = () => show(i + 1);
+  const play = () => {
+    stopCarousel();
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    carouselTimer = setInterval(() => show(i + 1), 3800);
+  };
+  document.getElementById("prev").onclick = () => {
+    show(i - 1);
+    play();
+  };
+  document.getElementById("next").onclick = () => {
+    show(i + 1);
+    play();
+  };
   dots.forEach((d) => {
-    d.onclick = () => show(Number(d.dataset.i));
+    d.onclick = () => {
+      show(Number(d.dataset.i));
+      play();
+    };
   });
+  const root = document.querySelector(".carousel");
+  root.addEventListener("mouseenter", stopCarousel);
+  root.addEventListener("mouseleave", play);
+  play();
+}
+
+function closeProduct() {
+  stopCarousel();
+  modal.classList.remove("open");
+  modal.innerHTML = "";
 }
 
 function openProduct(id) {
@@ -119,32 +163,35 @@ function openProduct(id) {
   const offer = publicPriceLabel(p);
   const text = `Hola, me interesa: ${p.name} (${offer})`;
   const links = phones.filter((x) => x.phone);
-  const urls = (p.images || []).map((i) => i.url).filter(Boolean);
-  if (!urls.length && p.imageUrl) urls.push(p.imageUrl);
+  const urls = productUrls(p);
   modal.classList.add("open");
   modal.innerHTML = `
-    <div class="sheet">
+    <div class="sheet product-sheet">
       ${galleryHtml(p)}
-      <div class="kicker">${p.categoryName}</div>
-      <h2>${escapeHtml(p.name)}</h2>
-      <p>${escapeHtml(p.description || "Sin descripción")}</p>
-      <p class="price">${offer}</p>
-      <p class="stock ${p.available ? "" : "out"}">${availabilityLabel(p)}</p>
-      ${
-        links.length
-          ? `<p class="kicker">WhatsApp</p><div class="wa-list">${links
-              .map((x) => `<a class="btn" target="_blank" rel="noreferrer" href="${whatsappLink(x.phone, text)}">${escapeHtml(x.label)}</a>`)
-              .join("")}</div>`
-          : `<p class="empty">WhatsApp aún no configurado.</p>`
-      }
-      <p><button class="ghost" type="button" id="close-modal">Cerrar</button></p>
+      <div class="product-copy">
+        <div class="kicker">${escapeHtml(p.categoryName)}</div>
+        <h2>${escapeHtml(p.name)}</h2>
+        <p class="lead">${escapeHtml(p.description || "Sin descripción")}</p>
+        <p class="price">${offer}</p>
+        <p class="stock ${p.available ? "" : "out"}">${availabilityLabel(p)}</p>
+      </div>
+      <div class="product-cta">
+        ${
+          links.length
+            ? `<p class="kicker">Escribir por WhatsApp</p><div class="wa-list">${links
+                .map((x) => `<a class="btn" target="_blank" rel="noreferrer" href="${whatsappLink(x.phone, text)}">${escapeHtml(x.label)}</a>`)
+                .join("")}</div>`
+            : `<p class="empty">WhatsApp aún no configurado.</p>`
+        }
+        <button class="ghost close-product" type="button" id="close-modal">Cerrar</button>
+      </div>
     </div>`;
   bindCarousel(urls);
-  document.getElementById("close-modal").onclick = () => modal.classList.remove("open");
+  document.getElementById("close-modal").onclick = closeProduct;
 }
 
 modal.addEventListener("click", (e) => {
-  if (e.target === modal) modal.classList.remove("open");
+  if (e.target === modal) closeProduct();
 });
 
 function escapeHtml(s) {
