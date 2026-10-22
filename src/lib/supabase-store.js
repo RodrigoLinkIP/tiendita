@@ -2,7 +2,8 @@ import { getSupabase } from "./supabase-client.js";
 import { impliedUnitPrice, normalizePhones } from "./offer.js";
 
 function mapProduct(row, images = []) {
-  const image = (images || []).sort((a, b) => a.sort_order - b.sort_order)[0];
+  const sorted = [...(images || [])].sort((a, b) => a.sort_order - b.sort_order);
+  const image = sorted[0];
   return {
     id: row.id,
     name: row.name,
@@ -21,6 +22,7 @@ function mapProduct(row, images = []) {
     avgUnitCost: Number(row.avg_unit_cost || 0),
     isPublished: row.is_published,
     imageUrl: image?.public_url || "",
+    images: sorted.map((img) => ({ id: img.id, url: img.public_url, sortOrder: img.sort_order })),
     available: row.stock_qty > 0,
   };
 }
@@ -76,7 +78,7 @@ export function createSupabaseStore() {
     async listPublishedProducts() {
       const { data, error } = await sb
         .from("products")
-        .select("*, categories(name), product_images(public_url, sort_order)")
+        .select("*, categories(name), product_images(id, public_url, sort_order)")
         .eq("is_published", true)
         .is("archived_at", null)
         .order("name");
@@ -103,7 +105,7 @@ export function createSupabaseStore() {
     async listAllProducts() {
       const { data, error } = await sb
         .from("products")
-        .select("*, categories(name), product_images(public_url, sort_order)")
+        .select("*, categories(name), product_images(id, public_url, sort_order)")
         .order("name");
       if (error) throw error;
       return data.map((row) => mapProduct(row, row.product_images));
@@ -134,20 +136,56 @@ export function createSupabaseStore() {
         if (error) throw error;
         row = data;
       }
-      if (input.imageFile) {
-        const path = `${row.id}/${Date.now()}-${input.imageFile.name}`;
-        const { error: upErr } = await sb.storage.from("product-images").upload(path, input.imageFile);
-        if (upErr) throw upErr;
-        const { data: pub } = sb.storage.from("product-images").getPublicUrl(path);
-        const { error: imgErr } = await sb.from("product_images").insert({
-          product_id: row.id,
-          storage_path: path,
-          public_url: pub.publicUrl,
-          sort_order: 0,
-        });
+      const files = [...(input.imageFiles || [])].filter((f) => f && f.size);
+      if (files.length) {
+        const { data: existing } = await sb
+          .from("product_images")
+          .select("sort_order")
+          .eq("product_id", row.id)
+          .order("sort_order", { ascending: false })
+          .limit(1);
+        let order = Number(existing?.[0]?.sort_order ?? -1) + 1;
+        for (const file of files) {
+          const path = `${row.id}/${Date.now()}-${order}-${file.name}`;
+          const { error: upErr } = await sb.storage.from("product-images").upload(path, file);
+          if (upErr) throw upErr;
+          const { data: pub } = sb.storage.from("product-images").getPublicUrl(path);
+          const { error: imgErr } = await sb.from("product_images").insert({
+            product_id: row.id,
+            storage_path: path,
+            public_url: pub.publicUrl,
+            sort_order: order,
+          });
+          if (imgErr) throw imgErr;
+          order += 1;
+        }
+      }
+      const extraUrls = (input.imageUrls || []).filter((u) => typeof u === "string" && u.trim());
+      if (extraUrls.length) {
+        const { data: existing } = await sb
+          .from("product_images")
+          .select("sort_order")
+          .eq("product_id", row.id)
+          .order("sort_order", { ascending: false })
+          .limit(1);
+        let order = Number(existing?.[0]?.sort_order ?? -1) + 1;
+        const { error: imgErr } = await sb.from("product_images").insert(
+          extraUrls.map((url) => ({
+            product_id: row.id,
+            storage_path: null,
+            public_url: String(url).trim(),
+            sort_order: order++,
+          })),
+        );
         if (imgErr) throw imgErr;
       }
-      return mapProduct(row);
+      const { data: imgs } = await sb.from("product_images").select("id, public_url, sort_order").eq("product_id", row.id);
+      return mapProduct(row, imgs || []);
+    },
+
+    async removeProductImage(imageId) {
+      const { error } = await sb.from("product_images").delete().eq("id", imageId);
+      if (error) throw error;
     },
 
     async createPurchaseDraft({ purchasedOn, notes, lines }) {

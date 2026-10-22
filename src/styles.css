@@ -145,13 +145,50 @@ button.ghost, .btn.ghost {
 .sheet {
   background: var(--card);
   color: var(--ink);
-  max-width: 32rem;
+  max-width: 36rem;
   width: 100%;
   border-radius: 1.2rem;
   padding: 1.2rem;
   max-height: 90vh;
   overflow: auto;
 }
+.thumbs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.thumbs figure { margin: 0; width: 4.5rem; position: relative; }
+.thumbs img { width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 0.5rem; }
+.thumbs button {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.15rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.7rem;
+}
+.carousel { position: relative; }
+.carousel-frame {
+  height: 16rem;
+  background: #f3e3d1;
+  border-radius: 0.8rem;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.carousel-frame img { width: 100%; height: 16rem; object-fit: cover; }
+.carousel-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+.carousel-nav button { padding: 0.35rem 0.7rem; }
+.dots { display: flex; gap: 0.3rem; justify-content: center; }
+.dots span {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--line);
+  cursor: pointer;
+}
+.dots span.on { background: var(--coral); }
 .sheet h2 { margin: 0 0 0.8rem; }
 .sheet form.stack { max-width: none; }
 .toolbar {

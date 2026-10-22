@@ -203,10 +203,10 @@ function productForm(categories, p = {}) {
         <option value="count" ${p.availabilityDisplay !== "subject" ? "selected" : ""}>Mostrar cuántos quedan</option>
       </select>
     </label>
-    <p class="empty">URL de foto (modo local): pega un enlace de internet solo para probar en tu computadora, sin subir archivos. En la tienda real no hace falta.<br>
-    Foto (Supabase Storage): sube el archivo desde el teléfono o la PC. Queda guardado en el proyecto y es lo que ve el público.</p>
-    <label>URL de foto (modo local) <input name="imageUrl" value="${esc(p.imageUrl || "")}"></label>
-    <label>Foto (Supabase Storage) <input name="imageFile" type="file" accept="image/*"></label>
+    <p class="empty">Puedes subir varias fotos. URL de foto (modo local): un enlace por línea, solo para probar en tu computadora. Foto (Supabase Storage): elige varios archivos a la vez; esas son las que ve el público.</p>
+    ${(p.images || []).length ? `<div class="thumbs">${(p.images || []).map((img) => `<figure><img src="${esc(img.url)}" alt=""><button type="button" class="ghost del-img" data-id="${esc(img.id)}">×</button></figure>`).join("")}</div>` : ""}
+    <label>URLs de foto (modo local, una por línea) <textarea name="imageUrls" rows="2"></textarea></label>
+    <label>Fotos (Supabase Storage) <input name="imageFiles" type="file" accept="image/*" multiple></label>
     <label class="check"><input type="checkbox" name="isPublished" ${p.isPublished ? "checked" : ""}> Publicado en catálogo</label>
     <button type="submit">${p.id ? "Guardar cambios" : "Crear producto"}</button>
     <p id="ferr" class="banner" hidden></p>
@@ -236,8 +236,11 @@ function productPayload(fd) {
     packPrice: fd.get("packPrice"),
     unitSalePrice: fd.get("unitSalePrice"),
     availabilityDisplay: fd.get("availabilityDisplay"),
-    imageUrl: fd.get("imageUrl"),
-    imageFile: fd.get("imageFile")?.size ? fd.get("imageFile") : null,
+    imageUrls: String(fd.get("imageUrls") || "")
+      .split(/\n/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+    imageFiles: [...(document.querySelector("#pform [name=imageFiles]")?.files || [])],
     isPublished: fd.get("isPublished") === "on",
   };
 }
@@ -257,6 +260,18 @@ function bindProductForm(categoriesLookup) {
       errBox.textContent = err.message;
     }
   };
+  document.querySelectorAll(".del-img").forEach((btn) => {
+    btn.onclick = async () => {
+      if (!store.removeProductImage) return;
+      try {
+        await store.removeProductImage(btn.dataset.id);
+        btn.closest("figure")?.remove();
+      } catch (err) {
+        document.getElementById("ferr").hidden = false;
+        document.getElementById("ferr").textContent = err.message;
+      }
+    };
+  });
   void categoriesLookup;
 }
 

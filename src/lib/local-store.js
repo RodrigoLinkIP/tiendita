@@ -140,14 +140,32 @@ export function createLocalStore() {
         state.products = existing
           ? state.products.map((p) => (p.id === id ? product : p))
           : [...state.products, product];
-        if (input.imageUrl) {
-          state.images = [
-            ...state.images.filter((i) => i.productId !== id),
-            { id: createId(), productId: id, publicUrl: input.imageUrl, sortOrder: 0 },
-          ];
+        const current = state.images.filter((i) => i.productId === id);
+        let order = current.reduce((m, i) => Math.max(m, i.sortOrder ?? 0), -1) + 1;
+        const extraUrls = (input.imageUrls || []).filter((u) => typeof u === "string" && u.trim());
+        for (const url of extraUrls) {
+          current.push({ id: createId(), productId: id, publicUrl: String(url).trim(), sortOrder: order++ });
         }
+        const files = [...(input.imageFiles || [])].filter((f) => f && f.size);
+        for (const file of files) {
+          current.push({
+            id: createId(),
+            productId: id,
+            publicUrl: URL.createObjectURL(file),
+            sortOrder: order++,
+          });
+        }
+        state.images = [...state.images.filter((i) => i.productId !== id), ...current];
         save(state);
         return hydrateProduct(product, state);
+      });
+    },
+
+    async removeProductImage(imageId) {
+      return serial(async () => {
+        const state = load();
+        state.images = state.images.filter((i) => i.id !== imageId);
+        save(state);
       });
     },
 
@@ -340,11 +358,12 @@ export function createLocalStore() {
 
 function hydrateProduct(p, state) {
   const category = state.categories.find((c) => c.id === p.categoryId);
-  const images = state.images.filter((i) => i.productId === p.id);
+  const images = state.images.filter((i) => i.productId === p.id).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   return {
     ...p,
     categoryName: category?.name || "Sin categoría",
     imageUrl: images[0]?.publicUrl || "",
+    images: images.map((img) => ({ id: img.id, url: img.publicUrl, sortOrder: img.sortOrder })),
     available: p.stockQty > 0,
   };
 }
