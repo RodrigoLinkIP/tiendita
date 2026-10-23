@@ -2,6 +2,7 @@ import { createId } from "./id.js";
 import {
   applyConfirmedPurchase,
   applyConfirmedSale,
+  applySaleUpdate,
   applyWriteOff,
   STATUS,
   summarizeFinance,
@@ -247,6 +248,36 @@ export function createLocalStore() {
         const result = applyConfirmedSale({
           sale: structuredClone(sale),
           productsById,
+          actorId: state.session?.userId || "local",
+          occurredAt: new Date().toISOString(),
+        });
+        Object.assign(sale, result.sale);
+        state.products = state.products.map((p) => productsById[p.id] || p);
+        state.movements.push(...result.movements);
+        save(state);
+        return sale;
+      });
+    },
+
+    async saveSale(input) {
+      return serial(async () => {
+        const state = load();
+        let sale = input.id ? state.sales.find((p) => p.id === input.id) : null;
+        if (input.id && !sale) throw new Error("Venta no encontrada");
+        if (!sale) {
+          sale = { id: createId(), status: STATUS.draft, soldOn: input.soldOn, notes: "", lines: [] };
+          state.sales.push(sale);
+        }
+        const productsById = Object.fromEntries(state.products.map((p) => [p.id, { ...p }]));
+        const result = applySaleUpdate({
+          sale: structuredClone(sale),
+          productsById,
+          patch: {
+            status: input.status,
+            soldOn: input.soldOn,
+            notes: input.notes || "",
+            lines: input.lines,
+          },
           actorId: state.session?.userId || "local",
           occurredAt: new Date().toISOString(),
         });

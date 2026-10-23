@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyConfirmedPurchase,
   applyConfirmedSale,
+  applySaleUpdate,
   summarizeFinance,
   weightedAverageCost,
 } from "../src/lib/inventory.js";
@@ -82,6 +83,35 @@ describe("venta confirmada", () => {
     expect(productsById.p1.stockQty).toBe(2);
   });
 
+  it("apartada descuenta y cancelada devuelve el stock", () => {
+    const productsById = { p1: product({ stockQty: 10, avgUnitCost: 0.2 }) };
+    const sale = { id: "s1", status: "draft", lines: [] };
+    applySaleUpdate({
+      sale,
+      productsById,
+      patch: { status: "reserved", soldOn: "t", notes: "", lines: [{ productId: "p1", qty: 3, unitPrice: 1 }] },
+      actorId: "a",
+      occurredAt: "t",
+    });
+    expect(productsById.p1.stockQty).toBe(7);
+    applySaleUpdate({
+      sale,
+      productsById,
+      patch: { status: "sold", soldOn: "t", notes: "", lines: [{ productId: "p1", qty: 3, unitPrice: 1 }] },
+      actorId: "a",
+      occurredAt: "t",
+    });
+    expect(productsById.p1.stockQty).toBe(7);
+    applySaleUpdate({
+      sale,
+      productsById,
+      patch: { status: "cancelled", soldOn: "t", notes: "", lines: [{ productId: "p1", qty: 3, unitPrice: 1 }] },
+      actorId: "a",
+      occurredAt: "t",
+    });
+    expect(productsById.p1.stockQty).toBe(10);
+  });
+
   it("dos ventas seguidas no pueden pasar el stock", () => {
     const productsById = { p1: product({ stockQty: 5, avgUnitCost: 1 }) };
     applyConfirmedSale({
@@ -140,6 +170,13 @@ describe("reportes", () => {
     expect(summary.merchandisePurchased).toBe(0);
     expect(summary.salesRevenue).toBe(0);
     expect(summary.cogs).toBe(0);
+  });
+
+  it("apartada no suma ingresos", () => {
+    const summary = summarizeFinance({
+      sales: [{ status: "reserved", lines: [{ qty: 2, unitPrice: 5, lineRevenue: 10, lineCogs: 1 }] }],
+    });
+    expect(summary.salesRevenue).toBe(0);
   });
 });
 

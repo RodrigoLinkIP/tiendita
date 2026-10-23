@@ -3,7 +3,18 @@ import { lineCost, roundTo } from "./money.js";
 export const STATUS = {
   draft: "draft",
   confirmed: "confirmed",
+  reserved: "reserved",
+  sold: "sold",
+  cancelled: "cancelled",
 };
+
+export function saleHoldsStock(status) {
+  return status === STATUS.reserved || status === STATUS.sold || status === STATUS.confirmed;
+}
+
+export function saleCountsRevenue(status) {
+  return status === STATUS.sold || status === STATUS.confirmed;
+}
 
 export function weightedAverageCost(stockQty, avgUnitCost, incomingQty, incomingUnitCost) {
   const stock = Number(stockQty);
@@ -110,6 +121,89 @@ export function applyConfirmedSale({ sale, productsById, actorId, occurredAt }) 
   return { sale, productsById, movements };
 }
 
+/**
+ * Crea o actualiza una venta y ajusta stock:
+ * comprada/apartada descuenta; cancelada devuelve.
+ */
+export function applySaleUpdate({ sale, productsById, patch, actorId, occurredAt }) {
+  const nextStatus = patch.status;
+  if (![STATUS.reserved, STATUS.sold, STATUS.cancelled].includes(nextStatus)) {
+    throw new Error("Estado de venta inválido");
+  }
+  if (!patch.lines?.length) throw new Error("La venta no tiene líneas");
+
+  const movements = [];
+  const prevStatus = sale.status;
+  const prevLines = [...(sale.lines || [])];
+
+  if (saleHoldsStock(prevStatus)) {
+    for (const line of prevLines) {
+      const product = productsById[line.productId];
+      if (!product) throw new Error("Producto inexistente");
+      const qty = Number(line.qty);
+      product.stockQty += qty;
+      movements.push({
+        productId: product.id,
+        movementType: "adjustment_in",
+        qty,
+        unitCost: Number(line.unitCost || product.avgUnitCost || 0),
+        referenceType: "sale",
+        referenceId: sale.id,
+        occurredAt,
+        createdBy: actorId,
+      });
+    }
+  }
+
+  const nextLines = [];
+  for (const raw of patch.lines) {
+    const qty = assertPositiveQty(raw.qty);
+    const product = productsById[raw.productId];
+    if (!product) throw new Error("Producto inexistente");
+    const unitPrice = Number(raw.unitPrice ?? product.unitSalePrice);
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      throw new Error("Precio unitario inválido");
+    }
+    const unitCost = Number(product.avgUnitCost);
+    nextLines.push({
+      id: raw.id,
+      productId: product.id,
+      qty,
+      unitPrice,
+      unitCost,
+      lineRevenue: lineCost(qty, unitPrice),
+      lineCogs: lineCost(qty, unitCost),
+    });
+  }
+
+  if (saleHoldsStock(nextStatus)) {
+    for (const line of nextLines) {
+      const product = productsById[line.productId];
+      if (product.stockQty < line.qty) {
+        throw new Error(`Stock insuficiente para ${product.name}: hay ${product.stockQty}, se piden ${line.qty}`);
+      }
+      product.stockQty -= line.qty;
+      movements.push({
+        productId: product.id,
+        movementType: "sale",
+        qty: -line.qty,
+        unitCost: line.unitCost,
+        referenceType: "sale",
+        referenceId: sale.id,
+        occurredAt,
+        createdBy: actorId,
+      });
+    }
+  }
+
+  sale.status = nextStatus;
+  sale.soldOn = patch.soldOn ?? sale.soldOn;
+  sale.notes = patch.notes ?? sale.notes;
+  sale.lines = nextLines;
+  if (nextStatus === STATUS.sold) sale.confirmedAt = occurredAt;
+  return { sale, productsById, movements };
+}
+
 /** Saca el stock restante (merma / producto que no se repondrá). No toca el historial de compras. */
 export function applyWriteOff({ product, actorId, occurredAt, reason = "write_off" }) {
   const qty = Number(product.stockQty);
@@ -153,7 +247,7 @@ export function summarizeFinance({
   );
 
   const confirmedSaleLines = sales
-    .filter((p) => p.status === STATUS.confirmed)
+    .filter((p) => saleCountsRevenue(p.status))
     .flatMap((p) => p.lines);
 
   const salesRevenue = roundTo(

@@ -240,6 +240,24 @@ export function createSupabaseStore() {
       if (error) throw error;
     },
 
+    async saveSale(input) {
+      const { data, error } = await sb.rpc("save_sale", {
+        p_payload: {
+          id: input.id || null,
+          status: input.status,
+          sold_on: input.soldOn,
+          notes: input.notes || "",
+          lines: (input.lines || []).map((l) => ({
+            product_id: l.productId,
+            qty: Number(l.qty),
+            unit_price: Number(l.unitPrice),
+          })),
+        },
+      });
+      if (error) throw error;
+      return { id: data };
+    },
+
     async registerExpense(input) {
       const { error } = await sb.rpc("register_expense", {
         p_spent_on: input.spentOn,

@@ -364,29 +364,54 @@ async function renderProducts(el) {
   });
 }
 
-function openSaleModal(products) {
+function saleStatusLabel(status) {
+  if (status === "reserved") return "Apartada";
+  if (status === "cancelled") return "Cancelada";
+  if (status === "sold" || status === "confirmed") return "Comprada";
+  return status || "";
+}
+
+function openSaleModal(products, sale) {
   const live = products.filter((p) => !p.archivedAt);
-  openSheet(`<h2>Registrar venta</h2>
-    <p class="empty">Si se vende por paquete, se descuenta el paquete completo. Si es por unidad, eliges el precio de esa venta.</p>
+  const line = sale?.lines?.[0] || {};
+  const current = products.find((x) => x.id === line.productId);
+  const options = [...live];
+  if (current && !options.some((x) => x.id === current.id)) options.unshift(current);
+  const selectedId = line.productId || options[0]?.id || "";
+  const status = sale?.status === "confirmed" ? "sold" : sale?.status || "sold";
+  const packsValue =
+    current?.sellMode === "pack" && Number(current.packQty) > 0
+      ? Math.max(1, Math.round(Number(line.qty || current.packQty) / Number(current.packQty)))
+      : 1;
+  openSheet(`<h2>${sale?.id ? "Editar venta" : "Registrar venta"}</h2>
+    <p class="empty">Comprada o apartada descuenta stock. Si se cancela, las piezas vuelven al inventario. Apartada no cuenta como ingreso.</p>
     <form id="sform" class="stack">
-      <label>Fecha <input name="soldOn" type="date" value="${today()}" required></label>
-      <label>Notas <input name="notes"></label>
-      <label>Producto <select name="productId">${live.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${p.stockQty})</option>`).join("")}</select></label>
+      <label>Fecha <input name="soldOn" type="date" value="${esc(sale?.soldOn || today())}" required></label>
+      <label>Estado
+        <select name="status">
+          <option value="sold" ${status === "sold" ? "selected" : ""}>Comprada</option>
+          <option value="reserved" ${status === "reserved" ? "selected" : ""}>Apartada</option>
+          <option value="cancelled" ${status === "cancelled" ? "selected" : ""}>Cancelada</option>
+        </select>
+      </label>
+      <label>Notas <input name="notes" value="${esc(sale?.notes || "")}"></label>
+      <label>Producto <select name="productId">${options
+        .map((p) => `<option value="${esc(p.id)}" ${p.id === selectedId ? "selected" : ""}>${esc(p.name)} (${p.stockQty})</option>`)
+        .join("")}</select></label>
       <p id="offer-hint" class="empty"></p>
-      <label class="pack-only">Paquetes vendidos <input name="packs" type="number" min="1" step="1" value="1"></label>
-      <label class="unit-only">Unidades vendidas <input name="qty" type="number" min="1" step="1" value="1"></label>
-      <label class="unit-only">Precio cobrado por unidad <input name="unitPrice" type="number" min="0" step="0.0001" required></label>
-      <button type="submit">Confirmar venta</button>
+      <label class="pack-only">Paquetes <input name="packs" type="number" min="1" step="1" value="${esc(packsValue)}"></label>
+      <label class="unit-only">Unidades <input name="qty" type="number" min="1" step="1" value="${esc(line.qty || 1)}"></label>
+      <label class="unit-only">Precio cobrado por unidad <input name="unitPrice" type="number" min="0" step="0.0001" required value="${esc(line.unitPrice ?? "")}"></label>
+      <button type="submit">${sale?.id ? "Guardar venta" : "Registrar venta"}</button>
       <p id="ferr" class="banner" hidden></p>
     </form>`);
   const form = document.getElementById("sform");
   const fill = () => {
-    const p = live.find((x) => x.id === form.productId.value);
+    const p = options.find((x) => x.id === form.productId.value) || live.find((x) => x.id === form.productId.value);
     if (!p) return;
-    form.sellHint = p.sellMode;
     document.getElementById("offer-hint").textContent =
       p.sellMode === "pack" ? `Oferta: ${publicPriceLabel(p)}` : "Venta por unidad: puedes poner el precio de esta venta.";
-    form.unitPrice.value = p.unitSalePrice;
+    if (!sale?.id || p.id !== line.productId) form.unitPrice.value = p.unitSalePrice;
     form.querySelectorAll(".pack-only").forEach((el) => {
       const on = p.sellMode === "pack";
       el.hidden = !on;
@@ -409,7 +434,7 @@ function openSaleModal(products) {
     const unlock = lockSubmit(e.target);
     if (!unlock) return;
     const fd = new FormData(e.target);
-    const p = live.find((x) => x.id === fd.get("productId"));
+    const p = products.find((x) => x.id === fd.get("productId"));
     try {
       let qty;
       let unitPrice;
@@ -421,12 +446,13 @@ function openSaleModal(products) {
         qty = fd.get("qty");
         unitPrice = fd.get("unitPrice");
       }
-      const draft = await store.createSaleDraft({
+      await store.saveSale({
+        id: sale?.id,
         soldOn: fd.get("soldOn"),
         notes: fd.get("notes"),
+        status: fd.get("status"),
         lines: [{ productId: fd.get("productId"), qty, unitPrice }],
       });
-      await store.confirmSale(draft.id);
       await afterSave();
     } catch (err) {
       unlock();
@@ -597,20 +623,27 @@ async function renderSales(el) {
   const [products, sales] = await Promise.all([store.listAllProducts(), store.listSales()]);
   el.innerHTML = `
     <h1>Ventas</h1>
+    <p class="empty">Marca cada pedido como comprada, apartada o cancelada. Clic en la fila para editarla.</p>
     <div class="toolbar"><button type="button" id="new-sale">Nueva venta</button></div>
     ${tableSales(sales, products)}`;
   el.querySelector("#new-sale").onclick = () => openSaleModal(products);
+  el.querySelectorAll("tr.clickable").forEach((tr) => {
+    tr.onclick = () => {
+      const sale = sales.find((s) => s.id === tr.dataset.id);
+      if (sale) openSaleModal(products, sale);
+    };
+  });
 }
 
 function tableSales(sales, products) {
   const name = (id) => products.find((p) => p.id === id)?.name || id;
-  if (!sales.length) return `<p class="empty">Sin ventas confirmadas.</p>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>${sales
+  if (!sales.length) return `<p class="empty">Sin ventas.</p>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Estado</th><th>Detalle</th><th></th></tr></thead><tbody>${sales
     .map(
       (p) =>
-        `<tr><td>${esc(p.soldOn || "")}</td><td>${esc(p.status)}</td><td>${esc(
-          p.lines.map((l) => `${name(l.productId)} × ${l.qty} @ ${unitMoney(l.unitPrice)} (costo ${unitMoney(l.unitCost)})`).join(", "),
-        )}</td></tr>`,
+        `<tr class="clickable" data-id="${esc(p.id)}"><td>${esc(p.soldOn || "")}</td><td>${esc(saleStatusLabel(p.status))}</td><td>${esc(
+          p.lines.map((l) => `${name(l.productId)} × ${l.qty} @ ${unitMoney(l.unitPrice)}`).join(", "),
+        )}</td><td class="actions"><button type="button" class="ghost">Editar</button></td></tr>`,
     )
     .join("")}</tbody></table></div>`;
 }
