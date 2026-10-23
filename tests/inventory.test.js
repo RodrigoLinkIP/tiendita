@@ -112,6 +112,19 @@ describe("venta confirmada", () => {
     expect(productsById.p1.stockQty).toBe(10);
   });
 
+  it("oculta del catálogo cuando el stock llega a 0", () => {
+    const productsById = { p1: product({ stockQty: 2, avgUnitCost: 0.2, isPublished: true }) };
+    applySaleUpdate({
+      sale: { id: "s1", status: "draft", lines: [] },
+      productsById,
+      patch: { status: "sold", soldOn: "t", notes: "", lines: [{ productId: "p1", qty: 2, unitPrice: 1 }] },
+      actorId: "a",
+      occurredAt: "t",
+    });
+    expect(productsById.p1.stockQty).toBe(0);
+    expect(productsById.p1.isPublished).toBe(false);
+  });
+
   it("dos ventas seguidas no pueden pasar el stock", () => {
     const productsById = { p1: product({ stockQty: 5, avgUnitCost: 1 }) };
     applyConfirmedSale({

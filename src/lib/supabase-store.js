@@ -82,6 +82,7 @@ export function createSupabaseStore() {
         .select("*, categories(name), product_images(id, public_url, sort_order)")
         .eq("is_published", true)
         .is("archived_at", null)
+        .gt("stock_qty", 0)
         .order("name");
       if (error) throw error;
       return data.map((row) => mapProduct(row, row.product_images));
@@ -128,7 +129,10 @@ export function createSupabaseStore() {
       if (input.temuUrl !== undefined) payload.temu_url = input.temuUrl || "";
       if (input.listPriceRemote !== undefined) payload.list_price_remote = input.listPriceRemote || 0;
       if (input.remotePackQty !== undefined) payload.remote_pack_qty = Math.max(1, Math.floor(Number(input.remotePackQty || 1)));
-      if (input.stockQty !== undefined) payload.stock_qty = Math.max(0, Math.floor(Number(input.stockQty || 0)));
+      if (input.stockQty !== undefined) {
+        payload.stock_qty = Math.max(0, Math.floor(Number(input.stockQty || 0)));
+        if (payload.stock_qty <= 0) payload.is_published = false;
+      }
       if (input.avgUnitCost !== undefined) payload.avg_unit_cost = Math.max(0, Number(input.avgUnitCost || 0));
       let row;
       if (input.id) {

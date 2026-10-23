@@ -315,6 +315,55 @@ button.ghost, .btn.ghost {
   gap: 0.5rem;
   margin: 0 0 1rem;
 }
+.filters-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  align-items: center;
+}
+.filters-bar input[type="search"],
+.filters-bar select {
+  min-width: 12rem;
+  flex: 1 1 12rem;
+  max-width: 22rem;
+}
+.choice {
+  display: flex;
+  gap: 0.4rem;
+  background: #f3eee6;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem;
+}
+.choice-opt {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  cursor: pointer;
+}
+.choice-opt input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.choice-opt span {
+  display: block;
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.choice-opt input:checked + span {
+  background: var(--teal);
+  color: #fff;
+}
+.sale-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+  max-width: 18rem;
+}
 .table-wrap { overflow-x: auto; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover { background: #fff3e4; }

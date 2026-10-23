@@ -298,8 +298,16 @@ function bindProductForm(categoriesLookup) {
   void categoriesLookup;
 }
 
+function matchesQuery(text, q) {
+  if (!q) return true;
+  return String(text || "")
+    .toLowerCase()
+    .includes(q.toLowerCase().trim());
+}
+
 async function renderProducts(el) {
   const [products, categories] = await Promise.all([store.listAllProducts(), store.listCategories()]);
+  const live = products.filter((p) => !p.archivedAt);
   el.innerHTML = `
     <h1>Productos</h1>
     <p class="empty">Catálogo público: nombre, cómo se vende, fotos y publicación. El stock y Temu están en Compras.</p>
@@ -307,29 +315,15 @@ async function renderProducts(el) {
       <button type="button" id="new-p">Nuevo producto</button>
       <button type="button" class="secondary" id="new-sale">Registrar venta</button>
     </div>
+    <div class="filters-bar">
+      <input type="search" id="p-search" placeholder="Buscar producto..." autocomplete="off">
+      <select id="p-cat"><option value="">Todas las categorías</option>${categories
+        .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`)
+        .join("")}</select>
+    </div>
     <div class="table-wrap"><table>
       <thead><tr><th>Nombre</th><th>Categoría</th><th>Se vende</th><th>Público</th><th></th></tr></thead>
-      <tbody>
-        ${
-          products.filter((p) => !p.archivedAt).length
-            ? products
-                .filter((p) => !p.archivedAt)
-                .map(
-                  (p) => `<tr class="clickable" data-id="${esc(p.id)}">
-                    <td>${esc(p.name)}</td>
-                    <td>${esc(p.categoryName || "")}</td>
-                    <td>${esc(publicPriceLabel(p))}<br><span class="kicker">${esc(availabilityLabel({ ...p, available: p.stockQty > 0 }))}</span></td>
-                    <td>${p.isPublished ? "sí" : "no"}</td>
-                    <td class="actions">
-                      <button type="button" class="ghost edit" data-id="${esc(p.id)}">Editar</button>
-                      <button type="button" class="ghost drop" data-id="${esc(p.id)}">Eliminar</button>
-                    </td>
-                  </tr>`,
-                )
-                .join("")
-            : `<tr><td colspan="5">Sin productos.</td></tr>`
-        }
-      </tbody>
+      <tbody id="p-rows"></tbody>
     </table></div>`;
 
   const openProduct = (id) => {
@@ -340,28 +334,54 @@ async function renderProducts(el) {
     document.querySelector("[name=sellMode]").onchange = () => toggleSellFields();
   };
 
+  const paint = () => {
+    const q = el.querySelector("#p-search").value;
+    const cat = el.querySelector("#p-cat").value;
+    const rows = live.filter((p) => (!cat || p.categoryId === cat) && (matchesQuery(p.name, q) || matchesQuery(p.description, q)));
+    const body = el.querySelector("#p-rows");
+    body.innerHTML = rows.length
+      ? rows
+          .map(
+            (p) => `<tr class="clickable" data-id="${esc(p.id)}">
+                    <td>${esc(p.name)}</td>
+                    <td>${esc(p.categoryName || "")}</td>
+                    <td>${esc(publicPriceLabel(p))}<br><span class="kicker">${esc(availabilityLabel({ ...p, available: p.stockQty > 0 }))}</span></td>
+                    <td>${p.isPublished ? "sí" : "no"}</td>
+                    <td class="actions">
+                      <button type="button" class="ghost edit" data-id="${esc(p.id)}">Editar</button>
+                      <button type="button" class="ghost drop" data-id="${esc(p.id)}">Eliminar</button>
+                    </td>
+                  </tr>`,
+          )
+          .join("")
+      : `<tr><td colspan="5">Sin productos con ese filtro.</td></tr>`;
+    body.querySelectorAll("tr.clickable").forEach((tr) => {
+      tr.onclick = (e) => {
+        if (e.target.closest("button")) return;
+        openProduct(tr.dataset.id);
+      };
+    });
+    body.querySelectorAll("button.edit").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        openProduct(btn.dataset.id);
+      };
+    });
+    body.querySelectorAll("button.drop").forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm("¿Eliminarlo del catálogo y vaciar el stock? No se podrá restockear este mismo renglón; las compras/ventas pasadas quedan en el historial.")) return;
+        await store.archiveProduct(btn.dataset.id);
+        await render();
+      };
+    });
+  };
+
   el.querySelector("#new-p").onclick = () => openProduct("");
   el.querySelector("#new-sale").onclick = () => openSaleModal(products);
-  el.querySelectorAll("tr.clickable").forEach((tr) => {
-    tr.onclick = (e) => {
-      if (e.target.closest("button")) return;
-      openProduct(tr.dataset.id);
-    };
-  });
-  el.querySelectorAll("button.edit").forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      openProduct(btn.dataset.id);
-    };
-  });
-  el.querySelectorAll("button.drop").forEach((btn) => {
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      if (!confirm("¿Eliminarlo del catálogo y vaciar el stock? No se podrá restockear este mismo renglón; las compras/ventas pasadas quedan en el historial.")) return;
-      await store.archiveProduct(btn.dataset.id);
-      await render();
-    };
-  });
+  el.querySelector("#p-search").oninput = paint;
+  el.querySelector("#p-cat").onchange = paint;
+  paint();
 }
 
 function saleStatusLabel(status) {
@@ -369,6 +389,11 @@ function saleStatusLabel(status) {
   if (status === "cancelled") return "Cancelada";
   if (status === "sold" || status === "confirmed") return "Comprada";
   return status || "";
+}
+
+function productPackQty(p) {
+  const n = Number(p?.packQty || 0);
+  return n > 1 ? n : 2;
 }
 
 function openSaleModal(products, sale) {
@@ -379,12 +404,15 @@ function openSaleModal(products, sale) {
   if (current && !options.some((x) => x.id === current.id)) options.unshift(current);
   const selectedId = line.productId || options[0]?.id || "";
   const status = sale?.status === "confirmed" ? "sold" : sale?.status || "sold";
-  const packsValue =
-    current?.sellMode === "pack" && Number(current.packQty) > 0
-      ? Math.max(1, Math.round(Number(line.qty || current.packQty) / Number(current.packQty)))
-      : 1;
+  const startProduct = options.find((p) => p.id === selectedId) || options[0];
+  const packSize = productPackQty(startProduct);
+  const qtyNum = Number(line.qty || 0);
+  const inferredPack = sale?.id
+    ? qtyNum > 1 && qtyNum % packSize === 0
+    : startProduct?.sellMode === "pack";
+  const packsValue = inferredPack && packSize ? Math.max(1, Math.round((qtyNum || packSize) / packSize)) : 1;
   openSheet(`<h2>${sale?.id ? "Editar venta" : "Registrar venta"}</h2>
-    <p class="empty">Comprada o apartada descuenta stock. Si se cancela, las piezas vuelven al inventario. Apartada no cuenta como ingreso.</p>
+    <p class="empty">Elige si esta venta es por paquete o por unidad (por ejemplo un solo sticker). Comprada o apartada descuenta stock; cancelada lo devuelve.</p>
     <form id="sform" class="stack">
       <label>Fecha <input name="soldOn" type="date" value="${esc(sale?.soldOn || today())}" required></label>
       <label>Estado
@@ -399,6 +427,13 @@ function openSaleModal(products, sale) {
         .map((p) => `<option value="${esc(p.id)}" ${p.id === selectedId ? "selected" : ""}>${esc(p.name)} (${p.stockQty})</option>`)
         .join("")}</select></label>
       <p id="offer-hint" class="empty"></p>
+      <div>
+        <span class="kicker">Cómo se cobró</span>
+        <div class="choice" role="radiogroup" aria-label="Tipo de venta">
+          <label class="choice-opt"><input type="radio" name="saleMode" value="pack" ${inferredPack ? "checked" : ""}><span>Por paquete</span></label>
+          <label class="choice-opt"><input type="radio" name="saleMode" value="unit" ${inferredPack ? "" : "checked"}><span>Por unidad</span></label>
+        </div>
+      </div>
       <label class="pack-only">Paquetes <input name="packs" type="number" min="1" step="1" value="${esc(packsValue)}"></label>
       <label class="unit-only">Unidades <input name="qty" type="number" min="1" step="1" value="${esc(line.qty || 1)}"></label>
       <label class="unit-only">Precio cobrado por unidad <input name="unitPrice" type="number" min="0" step="0.0001" required value="${esc(line.unitPrice ?? "")}"></label>
@@ -406,21 +441,27 @@ function openSaleModal(products, sale) {
       <p id="ferr" class="banner" hidden></p>
     </form>`);
   const form = document.getElementById("sform");
+  const saleMode = () => form.querySelector("[name=saleMode]:checked")?.value || "unit";
   const fill = () => {
-    const p = options.find((x) => x.id === form.productId.value) || live.find((x) => x.id === form.productId.value);
+    const p = options.find((x) => x.id === form.productId.value) || startProduct;
     if (!p) return;
+    const mode = saleMode();
     document.getElementById("offer-hint").textContent =
-      p.sellMode === "pack" ? `Oferta: ${publicPriceLabel(p)}` : "Venta por unidad: puedes poner el precio de esta venta.";
-    if (!sale?.id || p.id !== line.productId) form.unitPrice.value = p.unitSalePrice;
+      mode === "pack"
+        ? `Paquete del producto: ${publicPriceLabel({ ...p, sellMode: "pack", packQty: productPackQty(p), packPrice: p.packPrice || impliedUnitPrice(p) * productPackQty(p) })}`
+        : "Venta por unidad: puedes poner el precio de esta venta.";
+    if (mode === "unit" && (!sale?.id || p.id !== line.productId)) {
+      form.unitPrice.value = p.unitSalePrice || impliedUnitPrice(p);
+    }
     form.querySelectorAll(".pack-only").forEach((el) => {
-      const on = p.sellMode === "pack";
+      const on = mode === "pack";
       el.hidden = !on;
       el.querySelectorAll("input").forEach((i) => {
         i.disabled = !on;
       });
     });
     form.querySelectorAll(".unit-only").forEach((el) => {
-      const on = p.sellMode !== "pack";
+      const on = mode === "unit";
       el.hidden = !on;
       el.querySelectorAll("input").forEach((i) => {
         i.disabled = !on;
@@ -428,6 +469,9 @@ function openSaleModal(products, sale) {
     });
   };
   form.productId.onchange = fill;
+  form.querySelectorAll("[name=saleMode]").forEach((r) => {
+    r.onchange = fill;
+  });
   fill();
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -438,10 +482,11 @@ function openSaleModal(products, sale) {
     try {
       let qty;
       let unitPrice;
-      if (p.sellMode === "pack") {
+      if (saleMode() === "pack") {
         const packs = Number(fd.get("packs") || 1);
-        qty = packs * Number(p.packQty || 1);
-        unitPrice = impliedUnitPrice(p);
+        const size = productPackQty(p);
+        qty = packs * size;
+        unitPrice = p.sellMode === "pack" ? impliedUnitPrice(p) : Number(p.packPrice || 0) / size || Number(p.unitSalePrice || 0);
       } else {
         qty = fd.get("qty");
         unitPrice = fd.get("unitPrice");
@@ -620,32 +665,71 @@ function tablePurchases(purchases, products) {
 }
 
 async function renderSales(el) {
-  const [products, sales] = await Promise.all([store.listAllProducts(), store.listSales()]);
+  const [products, sales, categories] = await Promise.all([
+    store.listAllProducts(),
+    store.listSales(),
+    store.listCategories(),
+  ]);
   el.innerHTML = `
     <h1>Ventas</h1>
     <p class="empty">Marca cada pedido como comprada, apartada o cancelada. Clic en la fila para editarla.</p>
     <div class="toolbar"><button type="button" id="new-sale">Nueva venta</button></div>
-    ${tableSales(sales, products)}`;
+    <div class="filters-bar">
+      <input type="search" id="s-search" placeholder="Buscar producto o nota..." autocomplete="off">
+      <select id="s-cat"><option value="">Todas las categorías</option>${categories
+        .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`)
+        .join("")}</select>
+      <select id="s-status">
+        <option value="">Todos los estados</option>
+        <option value="sold">Comprada</option>
+        <option value="reserved">Apartada</option>
+        <option value="cancelled">Cancelada</option>
+      </select>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Estado</th><th>Producto</th><th>Descripción</th><th>Detalle</th><th></th></tr></thead>
+      <tbody id="s-rows"></tbody>
+    </table></div>`;
   el.querySelector("#new-sale").onclick = () => openSaleModal(products);
-  el.querySelectorAll("tr.clickable").forEach((tr) => {
-    tr.onclick = () => {
-      const sale = sales.find((s) => s.id === tr.dataset.id);
-      if (sale) openSaleModal(products, sale);
-    };
-  });
-}
-
-function tableSales(sales, products) {
-  const name = (id) => products.find((p) => p.id === id)?.name || id;
-  if (!sales.length) return `<p class="empty">Sin ventas.</p>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Estado</th><th>Detalle</th><th></th></tr></thead><tbody>${sales
-    .map(
-      (p) =>
-        `<tr class="clickable" data-id="${esc(p.id)}"><td>${esc(p.soldOn || "")}</td><td>${esc(saleStatusLabel(p.status))}</td><td>${esc(
-          p.lines.map((l) => `${name(l.productId)} × ${l.qty} @ ${unitMoney(l.unitPrice)}`).join(", "),
-        )}</td><td class="actions"><button type="button" class="ghost">Editar</button></td></tr>`,
-    )
-    .join("")}</tbody></table></div>`;
+  const productOf = (sale) => products.find((p) => p.id === sale.lines[0]?.productId);
+  const paint = () => {
+    const q = el.querySelector("#s-search").value;
+    const cat = el.querySelector("#s-cat").value;
+    const st = el.querySelector("#s-status").value;
+    const rows = sales.filter((sale) => {
+      const p = productOf(sale) || {};
+      const norm = sale.status === "confirmed" ? "sold" : sale.status;
+      if (st && norm !== st) return false;
+      if (cat && p.categoryId !== cat) return false;
+      return matchesQuery(p.name, q) || matchesQuery(p.description, q) || matchesQuery(sale.notes, q);
+    });
+    const body = el.querySelector("#s-rows");
+    body.innerHTML = rows.length
+      ? rows
+          .map((sale) => {
+            const p = productOf(sale) || {};
+            return `<tr class="clickable" data-id="${esc(sale.id)}">
+              <td>${esc(sale.soldOn || "")}</td>
+              <td>${esc(saleStatusLabel(sale.status))}</td>
+              <td>${esc(p.name || sale.lines[0]?.productId || "")}</td>
+              <td class="sale-desc">${esc(p.description || "—")}</td>
+              <td>${esc(sale.lines.map((l) => `× ${l.qty} @ ${unitMoney(l.unitPrice)}`).join(", "))}</td>
+              <td class="actions"><button type="button" class="ghost">Editar</button></td>
+            </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="6">Sin ventas con ese filtro.</td></tr>`;
+    body.querySelectorAll("tr.clickable").forEach((tr) => {
+      tr.onclick = () => {
+        const sale = sales.find((s) => s.id === tr.dataset.id);
+        if (sale) openSaleModal(products, sale);
+      };
+    });
+  };
+  el.querySelector("#s-search").oninput = paint;
+  el.querySelector("#s-cat").onchange = paint;
+  el.querySelector("#s-status").onchange = paint;
+  paint();
 }
 
 async function renderExpenses(el) {

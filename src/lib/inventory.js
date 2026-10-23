@@ -101,6 +101,7 @@ export function applyConfirmedSale({ sale, productsById, actorId, occurredAt }) 
     }
     const unitCost = Number(product.avgUnitCost);
     product.stockQty -= qty;
+    if (product.stockQty <= 0) product.isPublished = false;
     line.unitPrice = unitPrice;
     line.unitCost = unitCost;
     line.lineRevenue = lineCost(qty, unitPrice);
@@ -183,6 +184,7 @@ export function applySaleUpdate({ sale, productsById, patch, actorId, occurredAt
         throw new Error(`Stock insuficiente para ${product.name}: hay ${product.stockQty}, se piden ${line.qty}`);
       }
       product.stockQty -= line.qty;
+      if (product.stockQty <= 0) product.isPublished = false;
       movements.push({
         productId: product.id,
         movementType: "sale",
@@ -211,6 +213,7 @@ export function applyWriteOff({ product, actorId, occurredAt, reason = "write_of
   if (qty === 0) return { product, movement: null };
   const unitCost = Number(product.avgUnitCost);
   product.stockQty = 0;
+  product.isPublished = false;
   return {
     product,
     movement: {

@@ -92,7 +92,7 @@ export function createLocalStore() {
     async listPublishedProducts() {
       const state = load();
       return state.products
-        .filter((p) => p.isPublished && !p.archivedAt)
+        .filter((p) => p.isPublished && !p.archivedAt && Number(p.stockQty) > 0)
         .map((p) => hydrateProduct(p, state));
     },
 
@@ -142,7 +142,9 @@ export function createLocalStore() {
             input.stockQty !== undefined ? Math.max(0, Math.floor(Number(input.stockQty || 0))) : (existing?.stockQty ?? 0),
           avgUnitCost:
             input.avgUnitCost !== undefined ? Math.max(0, Number(input.avgUnitCost || 0)) : (existing?.avgUnitCost ?? 0),
-          isPublished: Boolean(input.isPublished),
+          isPublished: (input.stockQty !== undefined ? Math.max(0, Math.floor(Number(input.stockQty || 0))) : (existing?.stockQty ?? 0)) <= 0
+            ? false
+            : Boolean(input.isPublished),
           archivedAt: existing?.archivedAt || null,
         };
         state.products = existing
