@@ -687,7 +687,7 @@ async function renderSales(el) {
       </select>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Fecha</th><th>Estado</th><th>Producto</th><th>Descripción</th><th>Detalle</th><th></th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Estado</th><th>Producto</th><th>Notas</th><th>Detalle</th><th></th></tr></thead>
       <tbody id="s-rows"></tbody>
     </table></div>`;
   el.querySelector("#new-sale").onclick = () => openSaleModal(products);
@@ -712,7 +712,7 @@ async function renderSales(el) {
               <td>${esc(sale.soldOn || "")}</td>
               <td>${esc(saleStatusLabel(sale.status))}</td>
               <td>${esc(p.name || sale.lines[0]?.productId || "")}</td>
-              <td class="sale-desc">${esc(p.description || "—")}</td>
+              <td class="sale-desc">${esc(sale.notes || "—")}</td>
               <td>${esc(sale.lines.map((l) => `× ${l.qty} @ ${unitMoney(l.unitPrice)}`).join(", "))}</td>
               <td class="actions"><button type="button" class="ghost">Editar</button></td>
             </tr>`;
